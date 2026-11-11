@@ -296,7 +296,7 @@ function vistaDevs(raiz) {
         h("li", null, h("b", null, "documento.crear: "), "devuelve concepto, serie y folio."),
         h("li", null, h("b", null, "documento.emitir: "), "timbra el documento con ese concepto, serie y folio."),
         h("li", null, h("b", null, "documento.obtener-archivo: "), "entrega el XML y el PDF; con documento.cancelar se cancela ante el SAT.")),
-      h("p", { class: "nota" }, "Solo estas ocho operaciones están disponibles; cualquier otra responde 400. Use nombres que empiecen con PRUEBA en empresas de prueba.")),
+      h("p", { class: "nota" }, "Solo estas nueve operaciones están disponibles; cualquier otra responde 400. Use nombres que empiecen con PRUEBA en empresas de prueba.")),
     catalogo);
 
   Promise.all([api("/api/portal/operaciones"), api("/api/portal/empresas")]).then(([ops, empresas]) => {

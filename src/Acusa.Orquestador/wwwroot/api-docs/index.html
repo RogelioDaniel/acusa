@@ -1,50 +1,41 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Acusa · Rutas de facturación</title>
+<title>Acusa · API</title>
 <link rel="stylesheet" href="swagger-ui.css">
 <style>
 body{margin:0;background:#fafafa}
 #sesion{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 20px;background:#16231d;color:#fff;font:14px "Segoe UI",Arial,sans-serif}
 #sesion b{margin-right:8px}
-#sesion input{padding:5px 8px;border:1px solid #cfd6cc;border-radius:3px;font:inherit;min-width:210px}
+#sesion input{padding:5px 8px;border:1px solid #cfd6cc;border-radius:3px;font:inherit;min-width:260px}
 #sesion button{padding:6px 14px;border:0;border-radius:3px;background:#0b6b50;color:#fff;font:inherit;cursor:pointer}
+#sesion a{color:#bfe3d3;margin-left:auto}
 #estado{margin-left:8px;color:#bfe3d3}
 #estado.error{color:#ffb4a8}
 </style></head><body>
 <div id="sesion">
-  <b>Acusa · rutas de facturación</b>
-  <input id="correo" type="email" placeholder="Correo del portal" autocomplete="username">
-  <input id="clave" type="password" placeholder="Contraseña del portal" autocomplete="current-password">
-  <button id="entrar" type="button">Iniciar sesión</button>
-  <span id="estado">Inicie sesión para probar las rutas.</span>
+  <b>Acusa · API (reemplazo de Nexus)</b>
+  <input id="llave" type="password" placeholder="Llave de API (tipo Sistema)" autocomplete="off">
+  <button id="entrar" type="button">Obtener token</button>
+  <span id="estado">Pegue su llave para probar las rutas.</span>
+  <a href="rutas-de-alain/">Rutas del sistema de Alain (capa opcional)</a>
 </div>
 <div id="swagger-ui"></div>
 <script src="swagger-ui-bundle.js"></script>
 <script>
-  const ui = SwaggerUIBundle({
-    url: "openapi.yaml",
-    dom_id: "#swagger-ui",
-    deepLinking: true,
-    persistAuthorization: false,
-    tryItOutEnabled: true,
-  });
+  const ui = SwaggerUIBundle({ url: "openapi.yaml", dom_id: "#swagger-ui", deepLinking: true, tryItOutEnabled: true });
   const estado = document.getElementById("estado");
   async function entrar() {
-    estado.className = ""; estado.textContent = "Entrando…";
+    estado.className = ""; estado.textContent = "Pidiendo el token…";
     try {
-      const r = await fetch("/users/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: { email: document.getElementById("correo").value, password: document.getElementById("clave").value } }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error((j.errors || ["No se pudo iniciar sesión"]).join(" "));
-      ui.preauthorizeApiKey("bearerAuth", j.access_token);
-      document.getElementById("clave").value = "";
-      estado.textContent = "Sesión iniciada. Ya puede usar «Try it out» en cualquier ruta.";
+      const r = await fetch("/api/auth/token", { method: "POST", headers: { "x-api-key": document.getElementById("llave").value.trim() } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error("La llave no es válida o fue revocada.");
+      ui.preauthorizeApiKey("bearerAuth", j.token);
+      document.getElementById("llave").value = "";
+      estado.textContent = "Token listo (dura una hora). Ya puede usar «Try it out».";
     } catch (e) { estado.className = "error"; estado.textContent = e.message; }
   }
   document.getElementById("entrar").addEventListener("click", entrar);
-  document.getElementById("clave").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
+  document.getElementById("llave").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
 </script>
 </body></html>
