@@ -118,6 +118,11 @@ paths:
       security: [ { bearerAuth: [] } ]
       parameters:
       - { name: tareaId, in: path, required: true, schema: { type: string } }
+      - name: esperar
+        in: query
+        required: false
+        schema: { type: integer, minimum: 0, maximum: 120 }
+        description: Segundos que la respuesta espera a que la tarea termine. Sirve para recuperar el resultado de una orden cuya respuesta se perdió, sin volver a mandarla.
       responses:
         '200': { description: Estado y resultado de la tarea. }
         '404': { description: No existe. }

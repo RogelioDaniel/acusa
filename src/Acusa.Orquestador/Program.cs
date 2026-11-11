@@ -261,9 +261,18 @@ api.MapGet("/status", (HttpContext http, Almacen a, Seguridad seguridad, Opcione
     });
 });
 
-api.MapGet("/tasks/{id}", (string id, HttpContext http, Almacen a, Seguridad seguridad) =>
+// Estado de una tarea. Con ?esperar=N (segundos) la respuesta espera a que termine: sirve para recuperar el resultado de una
+// orden cuya respuesta se perdió (corte de red, tiempo agotado) sin volver a mandarla.
+api.MapGet("/tasks/{id}", async Task<IResult> (string id, HttpContext http, Almacen a, Seguridad seguridad, Opciones o, Notificador notificador, int? esperar) =>
 {
     if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (esperar is > 0)
+    {
+        var segundos = Math.Clamp(esperar.Value, 0, o.EsperaMaximaSegundos);
+        var espera = await notificador.EsperarResultadoAsync(a, quien.ClienteId, id, TimeSpan.FromSeconds(segundos), http.RequestAborted);
+        return espera is null ? Results.NotFound(new { error = "No existe la tarea." }) : Results.Ok(espera);
+    }
+
     return a.ObtenerTarea(quien.ClienteId, id) is { } tarea ? Results.Ok(tarea) : Results.NotFound(new { error = "No existe la tarea." });
 });
 
