@@ -26,6 +26,8 @@ builder.Services.AddSingleton(almacen);
 builder.Services.AddSingleton(new Seguridad(config.SecretoJwt, config.TokenSegundos));
 builder.Services.AddSingleton<IntentosDeAcceso>();
 builder.Services.AddSingleton<Notificador>();
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<Acusa.Orquestador.MantenerDespierto>();
 builder.Services.AddSingleton(new Acusa.Orquestador.Facturacion.DocStore(config.BaseDatos));
 builder.Services.AddSingleton<Acusa.Orquestador.Facturacion.IEjecutorOrdenes, Acusa.Orquestador.Facturacion.EjecutorCola>();
 builder.Services.AddSingleton<Acusa.Orquestador.Facturacion.FacturacionServicio>();
