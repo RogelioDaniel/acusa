@@ -1,0 +1,13 @@
+bin/
+obj/
+dist/
+capturas/
+
+# datos y secretos locales
+datos/
+*.db
+*.db-shm
+*.db-wal
+*.pfx
+*.key
+*.cer

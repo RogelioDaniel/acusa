@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Acusa.Contrato/Acusa.Contrato.csproj" />
+    <Project Path="src/Acusa.Programador/Acusa.Programador.csproj" />
+    <Project Path="src/Acusa.Orquestador/Acusa.Orquestador.csproj" />
+    <Project Path="src/Acusa.Sdk.Application/Acusa.Sdk.Application.csproj" />
+    <Project Path="src/Acusa.Sdk.Integration.Contpaqi/Acusa.Sdk.Integration.Contpaqi.csproj" />
+    <Project Path="src/Acusa.Sdk.Worker/Acusa.Sdk.Worker.csproj" />
+    <Project Path="src/Acusa.Worker.Desktop/Acusa.Worker.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Acusa.Sdk.Tests/Acusa.Sdk.Tests.csproj" />
+  </Folder>
+</Solution>

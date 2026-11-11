@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Acusa.Programador</RootNamespace>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Usa la misma hoja de estilos que el portal: se copia en cada compilación. -->
+  <Target Name="CopiarEstilosDelPortal" BeforeTargets="BeforeBuild">
+    <Copy SourceFiles="..\Acusa.Orquestador\wwwroot\app.css" DestinationFiles="wwwroot\app.css" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

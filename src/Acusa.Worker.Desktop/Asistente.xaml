@@ -1,0 +1,60 @@
+<Window x:Class="Acusa.Worker.Desktop.Asistente"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Configuración de Acusa Worker" Width="1000" Height="660" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" Foreground="{StaticResource Tinta}">
+    <Window.Background><SolidColorBrush Color="#F2F4EE"/></Window.Background>
+
+    <Grid Margin="22,18,22,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="270"/>
+            <ColumnDefinition Width="18"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Pasos -->
+        <Border Grid.Column="0" Style="{StaticResource Tarjeta}" Margin="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Margin="0,0,10,0"><Viewbox Width="40" Height="40"><Canvas Width="32" Height="32"><Path Fill="#0B6B50" Data="M7,2 L21,2 L28,9 L28,28 A2,2 0 0 1 26,30 L7,30 A2,2 0 0 1 5,28 L5,4 A2,2 0 0 1 7,2 Z"/><Path Fill="#FFFFFF" Opacity="0.4" Data="M21,2 L28,9 L23,9 A2,2 0 0 1 21,7 Z"/><Path Stroke="White" StrokeThickness="2.4" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M10.5,25 L16,10.5 L21.5,25 M12.5,20.2 L19.5,20.2"/></Canvas></Viewbox></Border>
+                        <TextBlock Text="Acusa" FontSize="24" FontWeight="ExtraBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Configuración del worker" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                    <TextBlock Text="Instala, valida y deja listo el worker local." Foreground="{StaticResource Suave}" FontSize="11.5" TextWrapping="Wrap" Margin="0,2,0,12"/>
+                </StackPanel>
+                <StackPanel Grid.Row="1" x:Name="ListaPasos" VerticalAlignment="Top"/>
+                <StackPanel Grid.Row="2">
+                    <Grid>
+                        <TextBlock Text="Progreso" Foreground="{StaticResource Suave}" FontSize="11.5"/>
+                        <TextBlock x:Name="TextoProgreso" Text="0%" Foreground="{StaticResource Suave}" FontSize="11.5" HorizontalAlignment="Right"/>
+                    </Grid>
+                    <ProgressBar x:Name="Barra" Height="6" Minimum="0" Maximum="100" Margin="0,4,0,0" Foreground="{StaticResource Acento}" Background="#D8DED2" BorderThickness="0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Contenido -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Border Style="{StaticResource Tarjeta}" Margin="0,0,0,14" Padding="32,26">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ContentControl x:Name="Pagina"/>
+                </ScrollViewer>
+            </Border>
+            <Grid Grid.Row="1">
+                <Button x:Name="BotonAnterior" Content="← Anterior" Style="{StaticResource BotonSuave}" HorizontalAlignment="Left" Click="Anterior_Click"/>
+                <TextBlock x:Name="Mensaje" Foreground="#B91C1C" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
+                <Button x:Name="BotonSiguiente" Content="Siguiente →" Style="{StaticResource BotonPrincipal}" HorizontalAlignment="Right" Click="Siguiente_Click"/>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

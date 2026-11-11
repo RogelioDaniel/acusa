@@ -1,0 +1,28 @@
+# Despliegue de Acusa Central en Render (Blueprint). Se usa desde un repositorio de GitHub que contenga este archivo en la raíz.
+services:
+  - type: web
+    name: acusa-central
+    runtime: docker
+    dockerfilePath: ./deploy/nube/Dockerfile
+    dockerContext: .
+    plan: starter            # el disco persistente requiere un plan de pago
+    healthCheckPath: /health
+    disk:
+      name: datos
+      mountPath: /datos
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: Urls
+        value: http://0.0.0.0:8080
+      - key: Orquestador__SecretoJwt
+        generateValue: true  # Render crea un valor aleatorio y lo guarda como secreto
+      - key: Orquestador__ClaveAdmin
+        generateValue: true
+      - key: Orquestador__CorreoInicial
+        sync: false          # se escribe en el panel de Render, no queda en el repositorio
+      - key: Orquestador__NombreInicial
+        sync: false
+      - key: Orquestador__ClaveInicial
+        sync: false

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acusa Programador</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b6b50'/%3E%3Cpath d='M9 24 16 8l7 16M11.5 19h9' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="barra-sup">
+  <div class="marca"><b>A</b><span>Acusa <small>Programador</small></span></div>
+  <nav class="pestanas" role="tablist" aria-label="Secciones">
+    <button role="tab" data-vista="programaciones" aria-selected="true">Programaciones</button>
+    <button role="tab" data-vista="corridas" aria-selected="false">Cola de corridas</button>
+    <button role="tab" data-vista="manual" aria-selected="false">Factura manual</button>
+  </nav>
+  <div class="derecha"><span class="punto ok" title="Conectado a Acusa Central"></span><span id="empresa">—</span></div>
+</header>
+<main>
+  <div class="encabezado"><div><h1>Programador</h1><p id="contexto">Sistema externo que manda órdenes a Acusa Central por horario.</p></div></div>
+  <div class="alerta" id="alerta" hidden></div>
+
+  <section id="v-programaciones">
+    <div class="tarjeta">
+      <h2>Programaciones</h2>
+      <p class="sub">Cada ejecución crea los documentos (documento.crear) y, si «Timbrar» está marcado, los emite (documento.emitir). Solo trabaja sobre una empresa de pruebas.</p>
+      <div id="programaciones"><div class="vacio">Cargando…</div></div>
+    </div>
+  </section>
+
+  <section id="v-corridas" hidden>
+    <div class="tarjeta">
+      <h2>Cola de corridas</h2>
+      <p class="sub">Cada fila es una ejecución de una programación, con los pasos que mandó a Acusa Central.</p>
+      <div class="tabla-caja" id="corridas"><div class="vacio">Todavía no hay corridas. Active una programación o pulse «Ejecutar ahora».</div></div>
+    </div>
+  </section>
+
+  <section id="v-manual" hidden>
+    <div class="tarjeta">
+      <h2>Factura manual</h2>
+      <p class="sub">Una factura suelta, sin horario. Viaja por Acusa Central hasta el worker de la empresa.</p>
+      <div class="dos">
+        <label class="campo"><span>Cliente (código en Comercial)</span><input type="text" id="cliente"></label>
+        <label class="campo"><span>Producto (código en Comercial)</span><input type="text" id="producto"></label>
+        <label class="campo"><span>Cantidad</span><input type="number" id="cantidad" min="1" step="1" value="1"></label>
+        <label class="campo"><span>Precio unitario (sin IVA)</span><input type="number" id="precio" min="0.01" step="0.01" value="1"></label>
+      </div>
+      <div class="fila-acciones">
+        <button class="boton" id="facturar">Crear y timbrar factura</button>
+        <span class="error" id="aviso"></span>
+        <b id="total" style="margin-left:auto"></b>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>Facturas</h2>
+      <div id="lista"><div class="vacio">Todavía no hay facturas.</div></div>
+    </div>
+  </section>
+</main>
+<footer class="pie" id="pie">Acusa Programador</footer>
+<script>
+const $ = id => document.getElementById(id);
+const dinero = n => n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const hora = d => d ? new Date(d).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+const dia = d => d ? new Date(d).toLocaleString('es-MX', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+const clase = t => ({ 'En cola': 'Pendiente', 'Esperando turno': 'Pendiente', 'En curso': 'EnProceso', 'Con errores': 'Fallida', Enviando: 'EnProceso', Timbrando: 'EnProceso', Cancelando: 'EnProceso' }[t] || t);
+let cfg = {};
+
+function faltan(d) {
+  if (!d) return '';
+  const s = Math.round((new Date(d) - Date.now()) / 1000);
+  if (s < 0) return 'ahora';
+  if (s < 60) return `en ${s} s`;
+  if (s < 3600) return `en ${Math.round(s / 60)} min`;
+  return `en ${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+}
+
+document.querySelectorAll('.pestanas button').forEach(b => b.onclick = () => ver(b.dataset.vista));
+function ver(v) {
+  if (!['programaciones', 'corridas', 'manual'].includes(v)) v = 'programaciones';
+  document.querySelectorAll('.pestanas button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.vista === v)));
+  ['programaciones', 'corridas', 'manual'].forEach(x => $('v-' + x).hidden = x !== v);
+  location.hash = v;
+}
+
+function total() { $('total').textContent = dinero((+$('cantidad').value || 0) * (+$('precio').value || 0)); }
+['cantidad', 'precio'].forEach(i => $(i).addEventListener('input', total));
+
+async function iniciar() {
+  cfg = await (await fetch('api/config')).json();
+  $('cliente').value = cfg.clienteCodigo; $('producto').value = cfg.productoCodigo;
+  $('empresa').textContent = cfg.empresa;
+  $('contexto').textContent = `Concepto ${cfg.concepto} · serie ${cfg.serie} · cliente ${cfg.clienteCodigo} · producto ${cfg.productoCodigo}`;
+  $('pie').textContent = `Acusa Programador · versión ${cfg.version}`;
+  if (!cfg.empresaSegura) { $('alerta').hidden = false; $('alerta').textContent = `La empresa ${cfg.empresa} no es de pruebas: por seguridad el Programador no manda órdenes.`; }
+  total(); ver((location.hash || '#programaciones').slice(1)); refrescar(); setInterval(refrescar, 2000);
+}
+
+async function refrescar() {
+  try {
+    const [ps, cs, fs] = await Promise.all([fetch('api/programaciones').then(r => r.json()), fetch('api/corridas').then(r => r.json()), fetch('api/facturas').then(r => r.json())]);
+    pintarProgramaciones(ps); pintarCorridas(cs); pintarFacturas(fs);
+  } catch { /* se reintenta */ }
+}
+
+function pintarProgramaciones(ps) {
+  if (document.activeElement && document.activeElement.closest('#programaciones')) return;
+  $('programaciones').innerHTML = ps.map(p => `
+    <div class="prog">
+      <label class="interruptor"><input type="checkbox" ${p.activa ? 'checked' : ''} onchange="activar('${p.id}', this.checked)"><span>Activa</span></label>
+      <div>
+        <h3>${esc(p.nombre)}</h3>
+        <div class="nota">${esc(p.horario)}</div>
+        <div class="nota">${esc(p.descripcion)}</div>
+        <div class="nota">Próxima: <b>${p.activa ? esc(dia(p.proxima)) + ' · ' + faltan(p.proxima) : 'apagada'}</b> · Última: <b>${esc(dia(p.ultima))}</b> · Ejecuciones: <b>${p.ejecuciones}</b> · Documentos por racha: <b>${p.documentosMin === p.documentosMax ? p.documentosMin : p.documentosMin + '–' + p.documentosMax}</b></div>
+      </div>
+      <div class="lado">
+        <label class="interruptor" style="margin:0"><input type="checkbox" ${p.timbrar ? 'checked' : ''} onchange="timbrar('${p.id}', this.checked)"><span>Timbrar</span></label>
+        <button class="boton suave chico" onclick="ejecutar('${p.id}')">Ejecutar ahora</button>
+      </div>
+    </div>`).join('');
+}
+
+async function activar(id, activa) {
+  const r = await fetch(`api/programaciones/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activa }) });
+  if (!r.ok) alert((await r.json()).error ?? 'No se pudo cambiar.');
+  refrescar();
+}
+async function timbrar(id, valor) {
+  await fetch(`api/programaciones/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ timbrar: valor }) });
+  refrescar();
+}
+async function ejecutar(id) {
+  const r = await fetch(`api/programaciones/${id}/ejecutar`, { method: 'POST' });
+  if (!r.ok) alert((await r.json()).error ?? 'No se pudo ejecutar.');
+  ver('corridas'); refrescar();
+}
+
+function pintarCorridas(cs) {
+  if (!cs.length) return;
+  $('corridas').innerHTML = `<table><thead><tr><th>Hora</th><th>Programación</th><th>Estado</th><th>Pasos</th><th>Folios</th></tr></thead><tbody>` +
+    cs.map(c => {
+      const pasos = c.pasos.map(p => `<div>${esc(p.tipo)} · ${p.ms == null ? '…' : p.ms + ' ms'} · ${esc(p.estado)}${p.detalle ? ' · ' + esc(p.detalle) : ''}</div>`).join('');
+      return `<tr><td class="mono">${esc(hora(c.programada))}${c.manual ? ' (manual)' : ''}</td><td>${esc(c.nombre)}</td><td><span class="estado-${clase(c.estado)}">${esc(c.estado)}</span></td>
+        <td class="nota" style="min-width:240px">${pasos}</td><td class="mono">${c.folios.map(esc).join('<br>')}</td></tr>`;
+    }).join('') + `</tbody></table>`;
+}
+
+function pintarFacturas(fs) {
+  if (!fs.length) return;
+  $('lista').innerHTML = fs.map(f => {
+    const nombre = f.folio ? `${esc(f.serie)}${f.folio}` : 'Factura en proceso';
+    const archivos = (f.estado === 'Timbrada' || f.estado === 'Cancelada')
+      ? `<button class="boton suave chico" onclick="archivo('${f.id}','pdf')">PDF</button> <button class="boton suave chico" onclick="archivo('${f.id}','xml')">XML</button>` : '';
+    const cancelar = f.estado === 'Timbrada' ? `<button class="boton suave chico" onclick="cancelar('${f.id}')">Cancelar</button>` : '';
+    return `<div class="factura"><div class="fila-acciones" style="align-items:center"><b class="mono">${nombre}</b><span class="estado-${clase(f.estado)}">${f.estado}</span>
+      <span class="nota">${esc(f.clienteCodigo)} · ${esc(f.productoCodigo)} · ${new Date(f.fecha).toLocaleTimeString('es-MX')} · ${dinero(f.cantidad * f.precio)}</span></div>
+      ${f.uuid ? `<div class="nota mono">${esc(f.uuid)}</div>` : ''}
+      <div class="nota">${f.pasos.map(esc).join('<br>')}</div>
+      ${f.error ? `<div class="err">${esc(f.error)}</div>` : ''}<div style="margin-top:6px">${archivos} ${cancelar}</div></div>`;
+  }).join('');
+}
+
+$('facturar').onclick = async () => {
+  $('facturar').disabled = true; $('aviso').textContent = '';
+  const r = await fetch('api/facturas', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clienteCodigo: $('cliente').value, productoCodigo: $('producto').value, cantidad: +$('cantidad').value, precio: +$('precio').value }) });
+  if (!r.ok) $('aviso').textContent = (await r.json()).error ?? 'No se pudo enviar.';
+  $('facturar').disabled = false; refrescar();
+};
+
+async function cancelar(id) {
+  if (!confirm('Se cancelará la factura ante el SAT con el motivo 02 (comprobante emitido con errores sin relación). ¿Continuar?')) return;
+  await fetch(`api/facturas/${id}/cancelar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo: '02' }) });
+  refrescar();
+}
+
+function archivo(id, tipo) { window.open(`api/facturas/${id}/archivo/${tipo}`, '_blank'); }
+iniciar();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Acusa.Sdk.Worker</RootNamespace>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Acusa.Contrato\Acusa.Contrato.csproj" />
+    <ProjectReference Include="..\Acusa.Sdk.Application\Acusa.Sdk.Application.csproj" />
+    <ProjectReference Include="..\Acusa.Sdk.Integration.Contpaqi\Acusa.Sdk.Integration.Contpaqi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- El panel del worker usa la misma hoja de estilos que el portal: se copia en cada compilación. -->
+  <Target Name="CopiarEstilosDelPortal" BeforeTargets="BeforeBuild">
+    <Copy SourceFiles="..\Acusa.Orquestador\wwwroot\app.css" DestinationFiles="wwwroot\app.css" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
