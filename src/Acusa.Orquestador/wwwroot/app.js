@@ -276,8 +276,12 @@ function mostrarLlave(llave, rol) {
 
 // ---------------------------------------------------------------- desarrolladores
 
-function curl(base, tipo, empresa, payload) {
-  return `curl -X POST ${base}/api/sdk/execute \\\n  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\\n  -d '${JSON.stringify({ tipoProceso: tipo, empresa, payload: JSON.parse(payload) })}'`;
+function curlDe(base, metodo, ruta, op) {
+  const url = base + ruta.replace(/\{[^}]+\}/g, (x) => x.replace(/[{}]/g, "").toUpperCase());
+  const cuerpo = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"] && op.requestBody.content["application/json"].example;
+  const lineas = [`curl -X ${metodo.toUpperCase()} "${url}"`, `  -H "Authorization: Bearer $LLAVE"`];
+  if (cuerpo) { lineas.push(`  -H "Content-Type: application/json"`); lineas.push(`  -d '${JSON.stringify(cuerpo)}'`); }
+  return lineas.join(" \\\n");
 }
 
 function vistaDevs(raiz) {
@@ -285,24 +289,33 @@ function vistaDevs(raiz) {
   const catalogo = h("div");
   const bloque = (titulo, texto) => h("div", { style: "margin-top:10px" }, h("div", { class: "etiqueta" }, titulo), h("div", { class: "copiable" }, h("code", null, texto), h("button", { class: "boton suave chico", onclick: () => copiar(texto) }, "Copiar")));
   raiz.append(
-    encabezado("Desarrolladores", "Acusa Central es una API REST: cada recurso (compañías, productos, facturas, movimientos) tiene su ruta, con los mismos nombres de campo del sistema de facturación. Un Acusa Worker ejecuta cada petición en CONTPAQi Comercial."),
+    encabezado("Desarrolladores", "Acusa Central es una API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial. Cada recurso (empresas emisoras, compañías, productos, facturas y movimientos) tiene su ruta."),
     h("div", { class: "tarjeta" }, h("h2", null, "Cómo se usa"),
-      h("p", { class: "sub" }, "Documentación interactiva y probador: ", h("a", { href: "/api-docs/", target: "_blank" }, "/api-docs"), "."),
-      bloque("1. Autenticarse", `Authorization: Bearer <llave de API ak_…>   (o un token de POST ${base}/api/auth/token con la cabecera x-api-key)`),
-      bloque("2. Crear una factura (borrador)", `POST ${base}/issuing_companies/{id}/invoices\n{ "invoice": { "concept": "5", "series": "PRUEBA", "invoice_date": "2026-11-12", "client_code": "…", "payment_method": "03", "cfdi": "S01", "tax_regime": "616",\n  "movements_attributes": [ { "product_code": "…", "quantity": 1, "price": 1, "vat_percentage": 16, "vat_retention_percentage": 0, "ieps_percentage": 0 } ] } }`),
-      bloque("3. Timbrar", `POST ${base}/issuing_companies/{id}/invoices/{invoice_id}/stamps\n→ 200 { "uuid", "sat_status": "stamped", "xml": "<cfdi:Comprobante …>" }   (el XML viene en texto plano)`),
-      bloque("4. Archivos y cancelación", `GET .../invoices/{invoice_id}/xml   ·   GET .../invoices/{invoice_id}/document   ·   POST .../invoices/{invoice_id}/cancelate { "cancellation": { "cancellation_reason": "02" } }`),
-      h("p", { class: "nota", style: "margin-top:10px" }, "Los errores de validación responden 422 con { \"errors\": [...] }. Use nombres que empiecen con PRUEBA en empresas de prueba. En la vista Probar de este portal puede correr toda la cadena con un botón.")),
-    h("div", { class: "tarjeta" }, h("h2", null, "API de órdenes (compatibilidad)"),
-      h("p", { class: "sub" }, "Los sistemas que ya usan POST /api/sdk/execute con tipoProceso siguen funcionando. Documentación en ", h("a", { href: "/api-docs/ordenes/", target: "_blank" }, "/api-docs/ordenes"), ".")),
+      h("p", { class: "sub" }, "Documentación interactiva con probador: ", h("a", { href: "/api-docs/", target: "_blank" }, "/api-docs"), " · Definición OpenAPI: ", h("a", { href: "/api-docs/openapi.yaml", target: "_blank" }, "openapi.yaml"), "."),
+      bloque("Dirección base", base),
+      bloque("Autenticación", "Authorization: Bearer <llave de API ak_…>"),
+      bloque("Flujo de una factura", "POST /products  →  POST /companies  →  POST /issuing_companies/{id}/invoices  →  POST …/invoices/{invoice_id}/stamps  →  GET …/invoices/{invoice_id}/xml"),
+      bloque("Respuesta de timbrado", `{ "message": "Invoice stamped", "uuid": "…", "sat_status": "stamped", "xml": "<cfdi:Comprobante …>" }`),
+      h("p", { class: "nota", style: "margin-top:10px" }, "Los errores de validación responden 422 con { \"errors\": [ … ] }. En la sección Probar puede correr la cadena completa con un botón.")),
     catalogo);
 
-  Promise.all([api("/api/portal/operaciones"), api("/api/portal/empresas")]).then(([ops, empresas]) => {
-    const empresa = empresas[0] || "adEMPRESA_DE_PRUEBA";
-    catalogo.replaceChildren(h("div", { class: "tarjeta" }, h("h2", null, "Operaciones de la API de órdenes"),
-      tabla(["Operación", "Qué hace", "Ejemplo"], ops.map((o) => h("tr", null, h("td", { class: "mono" }, o.tipoProceso), h("td", null, o.descripcion),
-        h("td", null, h("details", null, h("summary", null, "Ver"), h("pre", null, curl(base, o.tipoProceso, empresa, o.ejemplo)),
-          h("button", { class: "boton suave chico", onclick: () => copiar(curl(base, o.tipoProceso, empresa, o.ejemplo)) }, "Copiar"))))))));
+  fetch("/api-docs/openapi.json").then((r) => r.json()).then((spec) => {
+    const grupos = new Map();
+    for (const [ruta, item] of Object.entries(spec.paths)) {
+      for (const [metodo, op] of Object.entries(item)) {
+        if (!["get", "post", "put", "patch", "delete"].includes(metodo)) continue;
+        const tag = (op.tags && op.tags[0]) || "Otras";
+        if (!grupos.has(tag)) grupos.set(tag, []);
+        grupos.get(tag).push({ metodo, ruta, op });
+      }
+    }
+
+    catalogo.replaceChildren(...[...grupos.entries()].map(([tag, rutas]) => h("div", { class: "tarjeta" }, h("h2", null, tag),
+      tabla(["Método", "Ruta", "Qué hace", "Ejemplo"], rutas.map(({ metodo, ruta, op }) => {
+        const c = curlDe(base, metodo, ruta, op);
+        return h("tr", null, h("td", { class: "mono" }, metodo.toUpperCase()), h("td", { class: "mono" }, ruta), h("td", null, op.summary || ""),
+          h("td", null, h("details", null, h("summary", null, "Ver"), h("pre", null, c), h("button", { class: "boton suave chico", onclick: () => copiar(c) }, "Copiar"))));
+      })))));
   }).catch(falla(catalogo));
 }
 

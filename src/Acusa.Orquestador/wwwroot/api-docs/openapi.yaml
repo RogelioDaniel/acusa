@@ -1,18 +1,743 @@
----
 openapi: 3.0.1
 info:
-  title: Facturacion API sobre Acusa
+  title: Acusa · API de facturación
   version: v1
-  description: |
-    API REST de facturación y timbrado de facturas electrónicas sobre CONTPAQi Comercial, con los mismos caminos, métodos y nombres de campo de la API de Alain.
+  description: 'API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial.
 
-    **Cómo probar:** pegue su llave de API (empieza con `ak_`) arriba y pulse «Obtener token»; después «Try it out» en cualquier ruta.
 
-    **Disponibles:** empresas emisoras, compañías, direcciones, productos, facturas (crear, editar, timbrar con `xml` en texto plano, cancelar, XML y PDF, lote de timbrado) y movimientos.
-    **No disponibles en Acusa** (responden 404 o 501): reportes, descargas, usuarios, invitaciones, cargas masivas por Excel, prefactura/proforma y carga de sellos por API.
-    Las operaciones que escriben en CONTPAQi requieren un Acusa Worker en línea.
+    **Autenticación.** Envíe su llave de API (empieza con `ak_`) en la cabecera `Authorization: Bearer <llave>`. También puede cambiarla por un token de una hora con `POST /api/auth/token` (cabecera `x-api-key`). Para probar aquí, pegue la llave arriba y pulse «Obtener token».
+
+
+    **Flujo básico.** Dar de alta la empresa emisora, el producto y la compañía (cliente); crear la factura con sus movimientos; timbrarla (`stamps`, que devuelve el UUID y el XML en texto plano); consultar el XML y el PDF; cancelarla si hace falta.
+
+
+    Los errores de validación responden `422` con `{ "errors": [ ... ] }`. Las operaciones que escriben en CONTPAQi requieren un Acusa Worker en línea.'
 paths:
-  "/companies/{company_id}/addresses":
+  /users/sessions:
+    post:
+      summary: Iniciar sesión
+      tags:
+      - Sesiones de Usuario
+      parameters: []
+      responses:
+        '201':
+          description: Sesión iniciada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiJ9...
+                    description: JWT de acceso, se envía como Bearer token en cada solicitud
+                  refresh_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiJ9...
+                    description: Token para renovar el access_token en /users/refresh_token
+                  user_id:
+                    type: integer
+                    example: 1
+                  role:
+                    type: string
+                    example: admin
+                    enum:
+                    - viewer
+                    - invoicer
+                    - admin
+                    - superadmin
+                required:
+                - access_token
+                - refresh_token
+                - user_id
+                - role
+        '422':
+          description: Credenciales incorrectas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Credenciales incorrectas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              user:
+                email: usuario@empresa.com
+                password: '********'
+  /issuing_companies:
+    get:
+      summary: Listar empresas emisoras del usuario
+      tags:
+      - Empresas Emisoras
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+        required: false
+        description: Número máximo de resultados
+      - name: offset
+        in: query
+        schema:
+          type: integer
+        required: false
+        description: Desplazamiento para paginación
+      - name: order_by_field
+        in: query
+        schema:
+          type: string
+        required: false
+        description: Campo por el cual ordenar los resultados
+      - name: order_by_direction
+        in: query
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+        required: false
+        description: Dirección de ordenamiento (ascendente o descendente)
+      responses:
+        '200':
+          description: Empresas emisoras obtenidas exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    social_reason:
+                      type: string
+                      example: EMPRESA SA DE CV
+                    rfc:
+                      type: string
+                      example: XAXX010101000
+                    database_name:
+                      type: string
+                      example: db_acme
+                    users_count:
+                      type: integer
+                      example: 3
+                    invoices_count:
+                      type: integer
+                      example: 12
+                    active:
+                      type: boolean
+                      example: true
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+    post:
+      summary: Crear una nueva empresa emisora
+      tags:
+      - Empresas Emisoras
+      description: Crea la empresa emisora. Para poder timbrar facturas, después de crearla sube su Certificado de Sello Digital con POST /issuing_companies/{issuing_company_id}/upload_seals.
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: Empresa emisora creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
+        '422':
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Rfc can't be blank
+        '401':
+          description: No autorizado
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example: &id001
+              issuing_company:
+                social_reason: Mi Empresa SA de CV
+                rfc: AAA010101AAA
+                database_name: adMI_EMPRESA
+  /issuing_companies/{id}:
+    parameters:
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    get:
+      summary: Obtener los datos de una empresa emisora
+      tags:
+      - Empresas Emisoras
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Empresa emisora obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  social_reason:
+                    type: string
+                    example: EMPRESA SA DE CV
+                  rfc:
+                    type: string
+                    example: XAXX010101000
+                  database_name:
+                    type: string
+                    example: db_acme
+                  active:
+                    type: boolean
+                    example: true
+                  cer_filename:
+                    type: string
+                    example: csd_test.cer
+                    nullable: true
+                  key_filename:
+                    type: string
+                    example: csd_test.key
+                    nullable: true
+        '404':
+          description: Empresa emisora no encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - IssuingCompany not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+    put:
+      summary: Actualizar una empresa emisora
+      tags:
+      - Empresas Emisoras
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: Empresa emisora actualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
+        '422':
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Rfc can't be blank
+        '404':
+          description: Empresa emisora no encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - IssuingCompany not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example: *id001
+  /companies:
+    get:
+      summary: Listar compañías del usuario
+      tags:
+      - Compañías
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+        required: false
+        description: Número máximo de resultados
+      - name: offset
+        in: query
+        schema:
+          type: integer
+        required: false
+        description: Desplazamiento para paginación
+      - name: order_by_field
+        in: query
+        schema:
+          type: string
+        required: false
+        description: Campo por el cual ordenar los resultados
+      - name: order_by_direction
+        in: query
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+        required: false
+        description: Dirección de ordenamiento (ascendente o descendente)
+      responses:
+        '200':
+          description: Compañías obtenidas exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    code:
+                      type: string
+                      example: COMPANY001
+                    social_reason:
+                      type: string
+                      example: EMPRESA SA DE CV
+                    rfc:
+                      type: string
+                      example: XAXX010101000
+                    task_id:
+                      type: integer
+                      example: 2885
+                      nullable: true
+                    status:
+                      type: string
+                      example: pending
+                      enum:
+                      - pending
+                      - completed
+                      - failed
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+    post:
+      summary: Crear una nueva compañía
+      tags:
+      - Compañías
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: Compañía creada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  code:
+                    type: string
+                    example: COMPANY001
+                  social_reason:
+                    type: string
+                    example: EMPRESA SA DE CV
+                  rfc:
+                    type: string
+                    example: XAXX010101000
+        '422':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Social reason can't be blank
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              company:
+                social_reason: Cliente Ejemplo SA de CV
+                rfc: XAXX010101000
+                client_type: 1
+                credit_limit: 50000
+  /companies/{id}:
+    parameters:
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la compañía
+    get:
+      summary: Obtener los datos de una compañía
+      tags:
+      - Compañías
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Compañía obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  code:
+                    type: string
+                    example: COMPANY001
+                  social_reason:
+                    type: string
+                    example: EMPRESA SA DE CV
+                  rfc:
+                    type: string
+                    example: XAXX010101000
+                  task_id:
+                    type: integer
+                    example: 2885
+                    nullable: true
+                  status:
+                    type: string
+                    example: pending
+                    enum:
+                    - pending
+                    - completed
+                    - failed
+                  issuing_companies:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        social_reason:
+                          type: string
+                          example: EMISORA SA DE CV
+        '404':
+          description: Compañía no encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Company not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+    patch:
+      summary: Actualizar una compañía
+      tags:
+      - Compañías
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: Compañía actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
+        '422':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Client type must be either 1 (client), 2 (client/supplier) or 3 (supplier)
+        '404':
+          description: Compañía no encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Company not found
+        '401':
+          description: Se requieren permisos de administrador
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - User must have permissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              company:
+                social_reason: Cliente Ejemplo SA de CV
+                credit_limit: 80000
+    delete:
+      summary: Eliminar una compañía
+      tags:
+      - Compañías
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Compañía eliminada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
+        '404':
+          description: Compañía no encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Company not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /companies/{id}/edit:
+    parameters:
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la compañía
+    get:
+      summary: Obtener datos de una compañía para edición
+      tags:
+      - Compañías
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Datos de la compañía obtenidos exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  code:
+                    type: string
+                    example: COMPANY001
+                  client_type:
+                    type: integer
+                    example: 1
+                  credit_limit:
+                    type: number
+                    example: 50000
+                  rfc:
+                    type: string
+                    example: XAXX010101000
+                  social_reason:
+                    type: string
+                    example: EMPRESA SA DE CV
+        '404':
+          description: Compañía no encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Company not found
+        '401':
+          description: Se requieren permisos de administrador
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - User must have permissions
+  /companies/{company_id}/addresses:
     parameters:
     - name: company_id
       in: path
@@ -150,53 +875,22 @@ paths:
                     example:
                     - No authorization headers provided
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                address:
-                  type: object
-                  properties:
-                    street:
-                      type: string
-                      example: Av. Insurgentes Sur 123
-                    neighborhood:
-                      type: string
-                      example: Del Valle
-                    zip_code:
-                      type: string
-                      example: '03100'
-                    city:
-                      type: string
-                      example: Ciudad de México
-                    state:
-                      type: string
-                      example: CDMX
-                    country:
-                      type: string
-                      example: México
-                    address_type:
-                      type: integer
-                      example: 0
-                      description: 0 = fiscal, 1 = envío
-                    catalog_type:
-                      type: integer
-                      example: 1
-                      description: 1 = cliente, 2 = proveedor, 3 = documentos, 4 =
-                        empresas
-                  required:
-                  - street
-                  - neighborhood
-                  - zip_code
-                  - city
-                  - state
-                  - country
-                  - address_type
-                  - catalog_type
-              required:
-              - address
-  "/companies/{company_id}/addresses/{id}/edit":
+            example:
+              address:
+                street: Av. Reforma 100
+                neighborhood: Juárez
+                zip_code: '06600'
+                city: Ciudad de México
+                state: CDMX
+                country: México
+                address_type: 1
+                catalog_type: 1
+  /companies/{company_id}/addresses/{id}/edit:
     parameters:
     - name: company_id
       in: path
@@ -286,7 +980,7 @@ paths:
                       type: string
                     example:
                     - User must have permissions
-  "/companies/{company_id}/addresses/{id}":
+  /companies/{company_id}/addresses/{id}:
     parameters:
     - name: company_id
       in: path
@@ -358,29 +1052,15 @@ paths:
                     example:
                     - User must have permissions
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                street:
-                  type: string
-                  example: Av. Reforma 456
-                neighborhood:
-                  type: string
-                  example: Juárez
-                zip_code:
-                  type: string
-                  example: '06600'
-                city:
-                  type: string
-                  example: Ciudad de México
-                state:
-                  type: string
-                  example: CDMX
-                country:
-                  type: string
-                  example: México
+            example:
+              address:
+                street: Av. Reforma 200
+                zip_code: '06700'
     delete:
       summary: Eliminar una dirección
       tags:
@@ -424,2787 +1104,7 @@ paths:
                       type: string
                     example:
                     - No authorization headers provided
-  "/companies/batches":
-    post:
-      summary: Importar compañías masivamente desde un archivo Excel
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Importación con errores de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Companies imported successfully
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - File is required
-        '401':
-          description: No autorizado
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: Archivo Excel (.xlsx) con los datos de las compañías
-              required:
-              - file
-        required: true
-        description: Archivo Excel (.xlsx) con los datos de las compañías. [Descargar
-          template de ejemplo](http://localhost:3000/examples/batches_company_template.xlsx)
-  "/companies/unassigned":
-    get:
-      summary: Listar compañías activas no asignadas a ninguna empresa emisora
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Listado de compañías no asignadas
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                      example: 1
-                    code:
-                      type: string
-                      example: COMPANY1
-                    social_reason:
-                      type: string
-                      example: ACME SA DE CV
-                    rfc:
-                      type: string
-                      example: AAA010101AAA
-                    task_id:
-                      type: integer
-                      nullable: true
-                      example: 2885
-                    status:
-                      type: string
-                      example: approved
-        '401':
-          description: No autorizado
-  "/companies":
-    get:
-      summary: Listar compañías del usuario
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Número máximo de resultados
-      - name: offset
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Desplazamiento para paginación
-      - name: order_by_field
-        in: query
-        schema:
-          type: string
-        required: false
-        description: Campo por el cual ordenar los resultados
-      - name: order_by_direction
-        in: query
-        schema:
-          type: string
-          enum:
-          - asc
-          - desc
-        required: false
-        description: Dirección de ordenamiento (ascendente o descendente)
-      responses:
-        '200':
-          description: Compañías obtenidas exitosamente
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                      example: 1
-                    code:
-                      type: string
-                      example: COMPANY001
-                    social_reason:
-                      type: string
-                      example: EMPRESA SA DE CV
-                    rfc:
-                      type: string
-                      example: XAXX010101000
-                    task_id:
-                      type: integer
-                      example: 2885
-                      nullable: true
-                    status:
-                      type: string
-                      example: pending
-                      enum:
-                      - pending
-                      - completed
-                      - failed
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    post:
-      summary: Crear una nueva compañía
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: Compañía creada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  code:
-                    type: string
-                    example: COMPANY001
-                  social_reason:
-                    type: string
-                    example: EMPRESA SA DE CV
-                  rfc:
-                    type: string
-                    example: XAXX010101000
-        '422':
-          description: Error de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Social reason can't be blank
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                company:
-                  "$ref": "#/components/schemas/company"
-              required:
-              - company
-  "/companies/{id}/edit":
-    parameters:
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la compañía
-    get:
-      summary: Obtener datos de una compañía para edición
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Datos de la compañía obtenidos exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  code:
-                    type: string
-                    example: COMPANY001
-                  client_type:
-                    type: integer
-                    example: 1
-                  credit_limit:
-                    type: number
-                    example: 50000
-                  rfc:
-                    type: string
-                    example: XAXX010101000
-                  social_reason:
-                    type: string
-                    example: EMPRESA SA DE CV
-        '404':
-          description: Compañía no encontrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Company not found
-        '401':
-          description: Se requieren permisos de administrador
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - User must have permissions
-  "/companies/{id}":
-    parameters:
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la compañía
-    get:
-      summary: Obtener los datos de una compañía
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Compañía obtenida exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  code:
-                    type: string
-                    example: COMPANY001
-                  social_reason:
-                    type: string
-                    example: EMPRESA SA DE CV
-                  rfc:
-                    type: string
-                    example: XAXX010101000
-                  task_id:
-                    type: integer
-                    example: 2885
-                    nullable: true
-                  status:
-                    type: string
-                    example: pending
-                    enum:
-                    - pending
-                    - completed
-                    - failed
-                  issuing_companies:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                          example: 1
-                        social_reason:
-                          type: string
-                          example: EMISORA SA DE CV
-        '404':
-          description: Compañía no encontrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Company not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    patch:
-      summary: Actualizar una compañía
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Compañía actualizada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: Error de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Client type must be either 1 (client), 2 (client/supplier) or
-                      3 (supplier)
-        '404':
-          description: Compañía no encontrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Company not found
-        '401':
-          description: Se requieren permisos de administrador
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - User must have permissions
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                client_type:
-                  type: integer
-                  example: 2
-                credit_limit:
-                  type: integer
-                  example: 75000
-                rfc:
-                  type: string
-                  example: XAXX010101000
-                social_reason:
-                  type: string
-                  example: EMPRESA SA DE CV
-    delete:
-      summary: Eliminar una compañía
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Compañía eliminada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '404':
-          description: Compañía no encontrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Company not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/invoices/batches_stamp":
-    post:
-      summary: Timbrar varias facturas en lote
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Timbrado de facturas en proceso
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Timbrado en progreso
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Invoice 99 not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                invoice_ids:
-                  type: array
-                  items:
-                    type: integer
-                  example:
-                  - 1
-                  - 2
-                  - 3
-              required:
-              - invoice_ids
-  "/invoices/import_order":
-    post:
-      summary: Importar factura desde orden de compra (Excel)
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Factura importada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Sale order imported successfully
-                  invoice_ids:
-                    type: array
-                    items:
-                      type: integer
-                    example:
-                    - 42
-                    description: IDs de las facturas creadas
-        '422':
-          description: Error de validación o archivo inválido
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - File is required
-        '401':
-          description: No autorizado
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: Archivo Excel (.xlsx) con la orden de compra
-              required:
-              - file
-        required: true
-        description: Archivo Excel (.xlsx) con la orden de compra. [Descargar template
-          de ejemplo](http://localhost:3000/examples/sale_order_template.xlsx)
-  "/invoices/batches":
-    post:
-      summary: Importar facturas masivas desde un archivo Excel
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Importación con errores de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Invoices imported successfully
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - File is required
-                  invoice_ids:
-                    type: array
-                    items:
-                      type: integer
-                    example: []
-                    description: IDs de las facturas creadas exitosamente
-        '401':
-          description: No autorizado
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: Archivo Excel (.xlsx) con los datos de la factura
-              required:
-              - file
-        required: true
-        description: Archivo Excel (.xlsx) con los datos de la factura. [Descargar
-          template de ejemplo](http://localhost:3000/examples/invoice_template.xlsx)
-  "/invoices/zip":
-    post:
-      summary: Solicitar el zip con los PDF y XML de varias facturas timbradas
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Generación del zip en proceso
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  download_id:
-                    type: integer
-                    example: 1
-                  status:
-                    type: string
-                    example: pending
-                  message:
-                    type: string
-                    example: Descarga en progreso
-        '422':
-          description: Alguna factura no está timbrada o no existe
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Factura 1 no está timbrada
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                invoice_ids:
-                  type: array
-                  items:
-                    type: integer
-                  example:
-                  - 1
-                  - 2
-                  - 3
-              required:
-              - invoice_ids
-  "/issuing_companies/{issuing_company_id}/invoices":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    get:
-      summary: Listar facturas de la empresa emisora
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Número máximo de resultados
-      - name: offset
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Desplazamiento para paginación
-      - name: order_by_field
-        in: query
-        schema:
-          type: string
-        required: false
-        description: Campo por el cual ordenar los resultados
-      - name: order_by_direction
-        in: query
-        schema:
-          type: string
-          enum:
-          - asc
-          - desc
-        required: false
-        description: Dirección de ordenamiento (ascendente o descendente)
-      responses:
-        '200':
-          description: Facturas obtenidas exitosamente
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                      example: 1
-                    concept:
-                      type: string
-                      example: '5'
-                    series:
-                      type: string
-                      example: MAS
-                    invoice_date:
-                      type: string
-                      format: date
-                      example: '2026-05-14'
-                    client:
-                      type: object
-                      nullable: true
-                      properties:
-                        id:
-                          type: integer
-                          example: 1
-                        code:
-                          type: string
-                          example: COMPANY001
-                        social_reason:
-                          type: string
-                          example: EMPRESA SA DE CV
-                    payment_method:
-                      type: string
-                      example: 01 - Efectivo
-                    sat_status:
-                      type: string
-                      example: prepared
-                    error_message:
-                      type: string
-                      nullable: true
-                      example:
-                    folio:
-                      type: string
-                      nullable: true
-                      example: '12345'
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    post:
-      summary: Crear una factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: Factura creada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  concept:
-                    type: string
-                    example: '5'
-                  series:
-                    type: string
-                    example: MAS
-                  invoice_date:
-                    type: string
-                    format: date
-                    example: '2026-05-14'
-                  client:
-                    type: object
-                    nullable: true
-                    properties:
-                      id:
-                        type: integer
-                        example: 1
-                      code:
-                        type: string
-                        example: COMPANY001
-                      social_reason:
-                        type: string
-                        example: EMPRESA SA DE CV
-                  payment_method:
-                    type: string
-                    example: 01 - Efectivo
-        '422':
-          description: Error de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Concept can't be blank
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                invoice:
-                  "$ref": "#/components/schemas/invoice"
-              required:
-              - invoice
-  "/issuing_companies/{issuing_company_id}/invoices/new":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    get:
-      summary: Obtener datos para nueva factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Datos para nueva factura obtenidos exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  clients:
-                    type: array
-                    items:
-                      type: object
-                  products:
-                    type: array
-                    items:
-                      type: object
-                  payment_methods:
-                    type: array
-                    items:
-                      type: object
-                  tax_regimes:
-                    type: array
-                    items:
-                      type: object
-                  cfdis:
-                    type: array
-                    items:
-                      type: object
-                  concepts:
-                    type: array
-                    items:
-                      type: object
-                  issuing_companies:
-                    type: array
-                    items:
-                      type: object
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/invoices/{id}":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Detalle de una factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Detalle de factura obtenido exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  concept:
-                    type: string
-                    example: '5'
-                  series:
-                    type: string
-                    example: MAS
-                  invoice_date:
-                    type: string
-                    format: date
-                    example: '2026-05-14'
-                  payment_method:
-                    type: string
-                    example: 01 - Efectivo
-                  sat_status:
-                    type: string
-                    example: prepared
-                  uuid:
-                    type: string
-                    nullable: true
-                    example:
-                  cancellation_reason:
-                    type: string
-                    nullable: true
-                    example:
-                  error_message:
-                    type: string
-                    nullable: true
-                    example:
-                  folio:
-                    type: string
-                    nullable: true
-                    example: '12345'
-                  pdf?:
-                    type: boolean
-                    example: false
-                  xml?:
-                    type: boolean
-                    example: false
-                  preinvoice?:
-                    type: boolean
-                    example: false
-                  tax_regime:
-                    type: string
-                    example: 601 - General de Ley Personas Morales
-                  cfdi:
-                    type: string
-                    example: G03 - Gastos en general
-                  client:
-                    type: object
-                    nullable: true
-                    properties:
-                      code:
-                        type: string
-                        example: COMPANY001
-                      social_reason:
-                        type: string
-                        example: EMPRESA SA DE CV
-                      rfc:
-                        type: string
-                        example: XAXX010101000
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    patch:
-      summary: Actualizar una factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Factura actualizada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: Error de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Concept must be a valid concept
-        '401':
-          description: Se requieren permisos de administrador
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - User must have permissions
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                invoice:
-                  "$ref": "#/components/schemas/invoice"
-    delete:
-      summary: Eliminar una factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Factura eliminada exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Factura eliminada con éxito
-        '422':
-          description: La factura no está en estado preparado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Solo se pueden eliminar facturas en estado preparado o con error
-                      de timbrado
-        '401':
-          description: Se requieren permisos de administrador
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - User must have permissions
-  "/issuing_companies/{issuing_company_id}/invoices/{id}/edit":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Datos para edición de factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Datos para edición obtenidos exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  concept:
-                    type: string
-                    example: 5 - Factura al Contado
-                  series:
-                    type: string
-                    example: MAS
-                  invoice_date:
-                    type: string
-                    format: date
-                    example: '2026-05-14'
-                  payment_method:
-                    type: string
-                    example: 01 - Efectivo
-                  clients:
-                    type: array
-                    items:
-                      type: object
-                  payment_methods:
-                    type: array
-                    items:
-                      type: object
-                  tax_regimes:
-                    type: array
-                    items:
-                      type: object
-                  cfdis:
-                    type: array
-                    items:
-                      type: object
-                  concepts:
-                    type: array
-                    items:
-                      type: object
-        '401':
-          description: Se requieren permisos de administrador
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - User must have permissions
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/cancelate":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    post:
-      summary: Cancelar una factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Cancelación de factura en proceso
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Canceling invoice in progress
-        '422':
-          description: La factura ya fue cancelada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Invoice was canceled before or is not stamped.
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                cancellation:
-                  type: object
-                  properties:
-                    cancellation_reason:
-                      type: string
-                      example: '02'
-                      description: 01 = Comprobante emitido con errores con relación,
-                        02 = Comprobante emitido con errores sin relación, 03 = No
-                        se llevó a cabo la operación, 04 = Operación nominativa relacionada
-                        en la factura global
-                    substitution_uuid:
-                      type: string
-                      nullable: true
-                      example: 550e8400-e29b-41d4-a716-446655440000
-                      description: UUID de sustitución (requerido cuando cancellation_reason
-                        es 01)
-                  required:
-                  - cancellation_reason
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/document":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Obtener PDF de la factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: PDF obtenido exitosamente
-        '404':
-          description: PDF no disponible
-          content:
-            application/pdf:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - PDF not available
-        '401':
-          description: No autorizado
-          content:
-            application/pdf:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/invoice":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Obtener el link del documento de la factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Link del documento obtenido exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  file_url:
-                    type: string
-                    example: https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...
-                    description: URL firmada y temporal del archivo (ActiveStorage),
-                      expira después de un tiempo limitado
-                required:
-                - file_url
-        '404':
-          description: Documento no disponible
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - PDF not available
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/preinvoice":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Obtener PDF de la preview de la factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: PDF obtenido exitosamente
-        '404':
-          description: Vista previa no disponible
-          content:
-            application/pdf:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - PDF not available
-        '401':
-          description: No autorizado
-          content:
-            application/pdf:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/proforma":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Obtener el link de la prefactura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Link de la prefactura obtenido exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  file_url:
-                    type: string
-                    example: https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...
-                    description: URL firmada y temporal del archivo (ActiveStorage),
-                      expira después de un tiempo limitado
-                required:
-                - file_url
-        '404':
-          description: Prefactura no disponible
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - PDF not available
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/xml":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    get:
-      summary: Obtener el link del XML de la factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Link del XML obtenido exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  file_url:
-                    type: string
-                    example: https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...
-                    description: URL firmada y temporal del archivo (ActiveStorage),
-                      expira después de un tiempo limitado
-                required:
-                - file_url
-        '404':
-          description: XML no disponible
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - XML not available
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/stamps":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    - name: invoice_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la factura
-    post:
-      summary: Timbrar una factura
-      tags:
-      - Facturas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Factura timbrada. Trae el UUID y el XML timbrado en texto plano (campo `xml`); también se obtiene con GET .../xml.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Invoice stamped
-                  uuid:
-                    type: string
-                  sat_status:
-                    type: string
-                    example: stamped
-                  xml:
-                    type: string
-                    nullable: true
-                    description: XML del CFDI timbrado en texto plano. Es null si Comercial no lo entregó a tiempo; en ese caso se pide con GET .../xml.
-        '422':
-          description: La factura ya fue timbrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Solo se pueden timbrar facturas en estado preparado o con error
-                      de timbrado
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/companies/assign":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    post:
-      summary: Asignar compañías existentes a una empresa emisora
-      tags:
-      - Compañías
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Compañías asignadas (el arreglo errors puede incluir fallos
-            parciales)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Companies assigned successfully
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example: []
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                companies_id:
-                  type: array
-                  items:
-                    type: integer
-                  example:
-                  - 1
-                  - 2
-                  description: IDs de las compañías a asignar
-              required:
-              - companies_id
-  "/issuing_companies/invitations/accept":
-    post:
-      summary: Aceptar una invitación y vincular al usuario autenticado con la empresa
-        emisora
-      tags:
-      - Invitaciones
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: Invitación aceptada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Invitation accepted successfully
-        '422':
-          description: Token inválido o expirado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Enlace de invitación inválido
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                token:
-                  type: string
-                  description: Token cifrado recibido en el link de invitación
-              required:
-              - token
-  "/issuing_companies/{issuing_company_id}/invitations":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    post:
-      summary: Generar un link de invitación para vincular un usuario a la empresa
-        emisora
-      tags:
-      - Invitaciones
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: Link de invitación generado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  link:
-                    type: string
-                    example: http://localhost:3000/issuing_companies/invitations/accept?token=...
-        '422':
-          description: expires_at inválida (en el pasado)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Expires at debe ser una fecha futura
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                expires_at:
-                  type: string
-                  format: date-time
-                  nullable: true
-                  example: '2026-08-25T00:00:00Z'
-                  description: Fecha de expiración del link. Si se omite, expira en
-                    7 días
-    get:
-      summary: Obtener el link de invitación vigente más reciente
-      tags:
-      - Invitaciones
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Link vigente (o null si no hay ninguno)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  link:
-                    type: string
-                    nullable: true
-                    example: http://localhost:3000/issuing_companies/invitations/accept?token=...
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/report":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    post:
-      summary: Generar reporte de facturación del mes de una empresa emisora
-      tags:
-      - Reportes
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Reporte generado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  invoices_month:
-                    type: object
-                    properties:
-                      quantity:
-                        type: integer
-                        example: 10
-                      stamped:
-                        type: integer
-                        example: 7
-                      prepared:
-                        type: integer
-                        example: 3
-                      invoiced_amount:
-                        type: number
-                        example: 15000.0
-                      previous_period:
-                        type: object
-                        properties:
-                          quantity:
-                            type: integer
-                            example: 10
-                          stamped:
-                            type: integer
-                            example: 7
-                          prepared:
-                            type: integer
-                            example: 3
-                          invoiced_amount:
-                            type: number
-                            example: 15000.0
-                      change:
-                        type: object
-                        description: Cada *_percent es null cuando previous_period
-                          vale 0, en vez de Infinity/NaN
-                        properties:
-                          quantity_percent:
-                            type: number
-                            nullable: true
-                            example: 12.5
-                          stamped_percent:
-                            type: number
-                            nullable: true
-                            example: 8.33
-                          invoiced_amount_percent:
-                            type: number
-                            nullable: true
-                            example: -4.2
-        '404':
-          description: La empresa emisora no existe
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - IssuingCompany not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/issuing_companies/{issuing_company_id}/upload_seals":
-    parameters:
-    - name: issuing_company_id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    post:
-      summary: Sube el Certificado de Sello Digital (CSD) de la empresa emisora
-      tags:
-      - Empresas Emisoras
-      description: Debe llamarse después de crear la empresa emisora con POST /issuing_companies.
-        Sin un CSD vigente la empresa emisora no puede timbrar facturas.
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Sello guardado exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: La llave privada no corresponde al certificado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Key file does not match the provided certificate
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                company[cer]:
-                  type: string
-                  format: binary
-                  description: Archivo .cer emitido por el SAT
-                company[key]:
-                  type: string
-                  format: binary
-                  description: Archivo .key emitido por el SAT
-                company[csd_password]:
-                  type: string
-                  description: Contraseña de la llave privada
-                company[csd_valid_until]:
-                  type: string
-                  description: Fecha de vencimiento del sello (YYYY-MM-DD)
-              required:
-              - company[cer]
-              - company[key]
-              - company[csd_password]
-              - company[csd_valid_until]
-        required: true
-        description: Certificado de Sello Digital de la empresa emisora
-  "/issuing_companies":
-    get:
-      summary: Listar empresas emisoras del usuario
-      tags:
-      - Empresas Emisoras
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Número máximo de resultados
-      - name: offset
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Desplazamiento para paginación
-      - name: order_by_field
-        in: query
-        schema:
-          type: string
-        required: false
-        description: Campo por el cual ordenar los resultados
-      - name: order_by_direction
-        in: query
-        schema:
-          type: string
-          enum:
-          - asc
-          - desc
-        required: false
-        description: Dirección de ordenamiento (ascendente o descendente)
-      responses:
-        '200':
-          description: Empresas emisoras obtenidas exitosamente
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                      example: 1
-                    social_reason:
-                      type: string
-                      example: EMPRESA SA DE CV
-                    rfc:
-                      type: string
-                      example: XAXX010101000
-                    database_name:
-                      type: string
-                      example: db_acme
-                    users_count:
-                      type: integer
-                      example: 3
-                    invoices_count:
-                      type: integer
-                      example: 12
-                    active:
-                      type: boolean
-                      example: true
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    post:
-      summary: Crear una nueva empresa emisora
-      tags:
-      - Empresas Emisoras
-      description: Crea la empresa emisora. Para poder timbrar facturas, después de
-        crearla sube su Certificado de Sello Digital con POST /issuing_companies/{issuing_company_id}/upload_seals.
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Empresa emisora creada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: Datos inválidos
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Rfc can't be blank
-        '401':
-          description: No autorizado
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                company[social_reason]:
-                  type: string
-                  description: Razón social de la empresa emisora
-                company[rfc]:
-                  type: string
-                  description: RFC de la empresa emisora
-                company[database_name]:
-                  type: string
-                  description: Nombre de la base de datos en ContPAQ
-                logo:
-                  type: string
-                  format: binary
-                  description: Logo de la empresa emisora (PNG, JPEG o WEBP)
-              required:
-              - company[social_reason]
-              - company[rfc]
-              - company[database_name]
-        required: true
-        description: Datos de la empresa emisora
-  "/issuing_companies/{id}":
-    parameters:
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la empresa emisora
-    get:
-      summary: Obtener los datos de una empresa emisora
-      tags:
-      - Empresas Emisoras
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Empresa emisora obtenida exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  social_reason:
-                    type: string
-                    example: EMPRESA SA DE CV
-                  rfc:
-                    type: string
-                    example: XAXX010101000
-                  database_name:
-                    type: string
-                    example: db_acme
-                  active:
-                    type: boolean
-                    example: true
-                  cer_filename:
-                    type: string
-                    example: csd_test.cer
-                    nullable: true
-                  key_filename:
-                    type: string
-                    example: csd_test.key
-                    nullable: true
-        '404':
-          description: Empresa emisora no encontrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - IssuingCompany not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    put:
-      summary: Actualizar una empresa emisora
-      tags:
-      - Empresas Emisoras
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Empresa emisora actualizada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: Datos inválidos
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Rfc can't be blank
-        '404':
-          description: Empresa emisora no encontrada
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - IssuingCompany not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                social_reason:
-                  type: string
-                  description: Razón social de la empresa emisora
-                rfc:
-                  type: string
-                  description: RFC de la empresa emisora
-                database_name:
-                  type: string
-                  description: Nombre de la base de datos en ContPAQ
-                logo:
-                  type: string
-                  format: binary
-                  description: Logo de la empresa emisora (PNG, JPEG o WEBP)
-        description: Datos de la empresa emisora
-  "/movements":
-    get:
-      summary: Listar movimientos de una factura
-      tags:
-      - Movimientos
-      security:
-      - bearerAuth: []
-      parameters:
-      - name: invoice_id
-        in: query
-        schema:
-          type: integer
-        required: true
-        description: ID de la factura
-      - name: limit
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Número máximo de resultados
-      - name: offset
-        in: query
-        schema:
-          type: integer
-        required: false
-        description: Desplazamiento para paginación
-      - name: order_by_field
-        in: query
-        schema:
-          type: string
-        required: false
-        description: Campo por el cual ordenar los resultados
-      - name: order_by_direction
-        in: query
-        schema:
-          type: string
-          enum:
-          - asc
-          - desc
-        required: false
-        description: Dirección de ordenamiento (ascendente o descendente)
-      responses:
-        '200':
-          description: Movimientos obtenidos exitosamente
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                      example: 1
-                    concept:
-                      type: string
-                      example: Servidor Pro
-                    quantity:
-                      type: integer
-                      example: 2
-                    price:
-                      type: string
-                      example: '2000.0'
-                    product:
-                      type: object
-                      nullable: true
-                      properties:
-                        code:
-                          type: string
-                          example: PRODUCT001
-                        name:
-                          type: string
-                          example: Servidor Pro
-                        description:
-                          type: string
-                          example: Renta de Servidor Pro
-                        unit_price:
-                          type: string
-                          example: '2000.0'
-                        unit_base:
-                          type: string
-                          example: Pieza
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-    post:
-      summary: Crear un nuevo movimiento
-      tags:
-      - Movimientos
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: Movimiento creado exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: Error de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Quantity can't be blank
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                movement:
-                  "$ref": "#/components/schemas/movement"
-              required:
-              - movement
-  "/movements/new":
-    get:
-      summary: Obtener datos para nuevo movimiento
-      tags:
-      - Movimientos
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Datos para nuevo movimiento obtenidos exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  product_codes:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                          example: 1
-                        code:
-                          type: string
-                          example: PRODUCT001
-                        name:
-                          type: string
-                          example: Servidor Pro
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/movements/{id}/edit":
-    parameters:
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID del movimiento
-    get:
-      summary: Obtener datos para editar un movimiento
-      tags:
-      - Movimientos
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Datos para edición obtenidos exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  quantity:
-                    type: integer
-                    example: 2
-                  price:
-                    type: string
-                    example: '2000.0'
-                  product_code:
-                    type: string
-                    example: PRODUCT001
-                  products:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                          example: 1
-                        code:
-                          type: string
-                          example: PRODUCT001
-                        name:
-                          type: string
-                          example: Servidor Pro
-        '404':
-          description: Movimiento no encontrado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Movement not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/movements/{id}":
-    parameters:
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID del movimiento
-    patch:
-      summary: Actualizar un movimiento
-      tags:
-      - Movimientos
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Movimiento actualizado exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '422':
-          description: Error de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Quantity can't be blank
-        '404':
-          description: Movimiento no encontrado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Movement not found
-        '401':
-          description: Se requieren permisos de administrador
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - User must have permissions
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                product_code:
-                  type: string
-                  example: PRODUCT002
-                quantity:
-                  type: integer
-                  example: 3
-                price:
-                  type: number
-                  example: 3000.0
-                  nullable: true
-    delete:
-      summary: Eliminar un movimiento
-      tags:
-      - Movimientos
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Movimiento eliminado exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: success
-        '404':
-          description: Movimiento no encontrado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Movement not found
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/products/batches":
-    post:
-      summary: Importar productos masivos desde un archivo Excel
-      tags:
-      - Productos
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '200':
-          description: Importación con errores de validación
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Products imported successfully
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - File is required
-        '401':
-          description: No autorizado
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: Archivo Excel (.xlsx) con los datos de los productos
-              required:
-              - file
-        required: true
-        description: Archivo Excel (.xlsx) con los datos de los productos. [Descargar
-          template de ejemplo](http://localhost:3000/examples/batches_product_template.xlsx)
-  "/products":
+  /products:
     get:
       summary: Listar productos activos
       tags:
@@ -3357,16 +1257,23 @@ paths:
                     example:
                     - No authorization headers provided
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                product:
-                  "$ref": "#/components/schemas/product"
-              required:
-              - product
-  "/products/new":
+            example:
+              product:
+                name: Renta de servidor
+                price: 2000
+                description: Renta mensual de servidor
+                unit_base: Pieza
+                series_sat: '81112200'
+                product_type: 3
+                issuing_company_id: 1
+                extra_texts_attributes:
+                - extra_text: Periodo mensual
+  /products/new:
     get:
       summary: Obtener datos para nuevo producto
       tags:
@@ -3421,7 +1328,7 @@ paths:
                       type: string
                     example:
                     - No authorization headers provided
-  "/products/{id}/edit":
+  /products/{id}/edit:
     parameters:
     - name: id
       in: path
@@ -3502,7 +1409,7 @@ paths:
                       type: string
                     example:
                     - No authorization headers provided
-  "/products/{id}":
+  /products/{id}:
     parameters:
     - name: id
       in: path
@@ -3568,26 +1475,15 @@ paths:
                     example:
                     - User must have permissions
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                name:
-                  type: string
-                  example: Servidor Ultra
-                price:
-                  type: string
-                  example: '3000.00'
-                description:
-                  type: string
-                  example: Renta de Servidor Ultra
-                unit_base:
-                  type: string
-                  example: Unidad de Servicio
-                series_sat:
-                  type: string
-                  example: '81112200'
+            example:
+              product:
+                name: Renta de servidor
+                price: 2500
     delete:
       summary: Eliminar un producto
       tags:
@@ -3631,11 +1527,18 @@ paths:
                       type: string
                     example:
                     - No authorization headers provided
-  "/users/downloads":
+  /issuing_companies/{issuing_company_id}/invoices:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
     get:
-      summary: Listar las descargas del usuario
+      summary: Listar facturas de la empresa emisora
       tags:
-      - Descargas
+      - Facturas
       security:
       - bearerAuth: []
       parameters:
@@ -3668,7 +1571,7 @@ paths:
         description: Dirección de ordenamiento (ascendente o descendente)
       responses:
         '200':
-          description: Descargas obtenidas exitosamente
+          description: Facturas obtenidas exitosamente
           content:
             application/json:
               schema:
@@ -3679,31 +1582,43 @@ paths:
                     id:
                       type: integer
                       example: 1
-                    status:
+                    concept:
                       type: string
-                      example: completed
-                      enum:
-                      - pending
-                      - processing
-                      - completed
-                      - failed
-                      - expired
-                    filename:
+                      example: '5'
+                    series:
                       type: string
-                      example: facturas_2026-09-12_ER1180.zip
+                      example: MAS
+                    invoice_date:
+                      type: string
+                      format: date
+                      example: '2026-05-14'
+                    client:
+                      type: object
                       nullable: true
-                    error_messages:
-                      type: array
-                      items:
-                        type: string
-                      example:
-                      - 'Archivo no disponible: A100/factura.xml'
-                    created_at:
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        code:
+                          type: string
+                          example: COMPANY001
+                        social_reason:
+                          type: string
+                          example: EMPRESA SA DE CV
+                    payment_method:
                       type: string
-                      format: date-time
-                    expires_at:
+                      example: 01 - Efectivo
+                    sat_status:
                       type: string
-                      format: date-time
+                      example: prepared
+                    error_message:
+                      type: string
+                      nullable: true
+                      example: null
+                    folio:
+                      type: string
+                      nullable: true
+                      example: '12345'
         '401':
           description: No autorizado
           content:
@@ -3717,174 +1632,16 @@ paths:
                       type: string
                     example:
                     - No authorization headers provided
-  "/users/downloads/{id}":
-    parameters:
-    - name: id
-      in: path
-      schema:
-        type: integer
-      required: true
-      description: ID de la descarga
-    get:
-      summary: Obtener el link del archivo de la descarga
-      tags:
-      - Descargas
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Link del archivo obtenido exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  file_url:
-                    type: string
-                    example: https://facturacion.s3.amazonaws.com/facturas.zip?X-Amz-Signature=...
-                    description: URL firmada y temporal del archivo (ActiveStorage),
-                      expira después de un tiempo limitado
-                required:
-                - file_url
-        '404':
-          description: Archivo no disponible
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - Archivo no disponible
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-                    example:
-                    - No authorization headers provided
-  "/users/email_verifications":
     post:
-      summary: Solicitar código de verificación de correo
+      summary: Crear una factura
       tags:
-      - Verificación de Correo
-      security:
-      - bearerAuth: []
-      responses:
-        '201':
-          description: Código de verificación enviado exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Código de verificación enviado
-        '422':
-          description: El correo ya fue verificado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-        '429':
-          description: Se solicitó un código antes de que termine el tiempo de espera
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-  "/users/email_verifications/confirmations":
-    post:
-      summary: Confirmar código de verificación de correo
-      tags:
-      - Verificación de Correo
+      - Facturas
       security:
       - bearerAuth: []
       parameters: []
       responses:
-        '200':
-          description: Correo verificado y usuario activado exitosamente
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Correo verificado exitosamente
-        '422':
-          description: Código inválido o expirado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-        '401':
-          description: No autorizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                code:
-                  type: string
-                  example: '123456'
-              required:
-              - code
-  "/users/info":
-    post:
-      summary: Obtener información del usuario autenticado
-      tags:
-      - Información de Usuario
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: Información obtenida exitosamente
+        '201':
+          description: Factura creada exitosamente
           content:
             application/json:
               schema:
@@ -3893,31 +1650,45 @@ paths:
                   id:
                     type: integer
                     example: 1
-                  email:
+                  concept:
                     type: string
-                    example: facturacion@admin.com
-                  issuing_companies:
+                    example: '5'
+                  series:
+                    type: string
+                    example: MAS
+                  invoice_date:
+                    type: string
+                    format: date
+                    example: '2026-05-14'
+                  client:
+                    type: object
+                    nullable: true
+                    properties:
+                      id:
+                        type: integer
+                        example: 1
+                      code:
+                        type: string
+                        example: COMPANY001
+                      social_reason:
+                        type: string
+                        example: EMPRESA SA DE CV
+                  payment_method:
+                    type: string
+                    example: 01 - Efectivo
+        '422':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                          example: 1
-                        rfc:
-                          type: string
-                          example: XAXX010101000
-                        social_reason:
-                          type: string
-                          example: EMPRESA SA DE CV
-                  number_of_companies:
-                    type: integer
-                    example: 1
-                required:
-                - id
-                - email
-                - issuing_companies
-                - number_of_companies
+                      type: string
+                    example:
+                    - Concept can't be blank
         '401':
           description: No autorizado
           content:
@@ -3929,34 +1700,82 @@ paths:
                     type: array
                     items:
                       type: string
-  "/users/refresh_token":
-    post:
-      summary: Renovar token de acceso
+                    example:
+                    - No authorization headers provided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              invoice:
+                concept: '5'
+                series: A
+                invoice_date: '2026-11-12'
+                client_code: CLI0001
+                payment_method: '03'
+                cfdi: G03
+                tax_regime: '601'
+                movements_attributes:
+                - product_code: PRO0001
+                  quantity: 2
+                  price: 2000
+                  vat_percentage: 16
+                  vat_retention_percentage: 0
+                  ieps_percentage: 0
+  /issuing_companies/{issuing_company_id}/invoices/new:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    get:
+      summary: Obtener datos para nueva factura
       tags:
-      - Refresh Token
-      parameters: []
+      - Facturas
+      security:
+      - bearerAuth: []
       responses:
-        '201':
-          description: Token renovado exitosamente
+        '200':
+          description: Datos para nueva factura obtenidos exitosamente
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  access_token:
-                    type: string
-                    example: eyJhbGciOiJIUzI1NiJ9...
-                    description: JWT de acceso, se envía como Bearer token en cada
-                      solicitud
-                  refresh_token:
-                    type: string
-                    example: eyJhbGciOiJIUzI1NiJ9...
-                    description: Nuevo token para renovar el access_token
-                required:
-                - access_token
-                - refresh_token
+                  clients:
+                    type: array
+                    items:
+                      type: object
+                  products:
+                    type: array
+                    items:
+                      type: object
+                  payment_methods:
+                    type: array
+                    items:
+                      type: object
+                  tax_regimes:
+                    type: array
+                    items:
+                      type: object
+                  cfdis:
+                    type: array
+                    items:
+                      type: object
+                  concepts:
+                    type: array
+                    items:
+                      type: object
+                  issuing_companies:
+                    type: array
+                    items:
+                      type: object
         '401':
-          description: Token inválido o expirado
+          description: No autorizado
           content:
             application/json:
               schema:
@@ -3967,59 +1786,100 @@ paths:
                     items:
                       type: string
                     example:
-                    - Invalid token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                refresh_token:
-                  type: string
-                  example: eyJhbGciOiJIUzI1NiJ9...
-              required:
-              - refresh_token
-  "/users/sessions":
-    post:
-      summary: Iniciar sesión
+                    - No authorization headers provided
+  /issuing_companies/{issuing_company_id}/invoices/{id}:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    get:
+      summary: Detalle de una factura
       tags:
-      - Sesiones de Usuario
-      parameters: []
+      - Facturas
+      security:
+      - bearerAuth: []
       responses:
-        '201':
-          description: Sesión iniciada exitosamente
+        '200':
+          description: Detalle de factura obtenido exitosamente
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  access_token:
-                    type: string
-                    example: eyJhbGciOiJIUzI1NiJ9...
-                    description: JWT de acceso, se envía como Bearer token en cada
-                      solicitud
-                  refresh_token:
-                    type: string
-                    example: eyJhbGciOiJIUzI1NiJ9...
-                    description: Token para renovar el access_token en /users/refresh_token
-                  user_id:
+                  id:
                     type: integer
                     example: 1
-                  role:
+                  concept:
                     type: string
-                    example: admin
-                    enum:
-                    - viewer
-                    - invoicer
-                    - admin
-                    - superadmin
-                required:
-                - access_token
-                - refresh_token
-                - user_id
-                - role
-        '422':
-          description: Credenciales incorrectas
+                    example: '5'
+                  series:
+                    type: string
+                    example: MAS
+                  invoice_date:
+                    type: string
+                    format: date
+                    example: '2026-05-14'
+                  payment_method:
+                    type: string
+                    example: 01 - Efectivo
+                  sat_status:
+                    type: string
+                    example: prepared
+                  uuid:
+                    type: string
+                    nullable: true
+                    example: null
+                  cancellation_reason:
+                    type: string
+                    nullable: true
+                    example: null
+                  error_message:
+                    type: string
+                    nullable: true
+                    example: null
+                  folio:
+                    type: string
+                    nullable: true
+                    example: '12345'
+                  pdf?:
+                    type: boolean
+                    example: false
+                  xml?:
+                    type: boolean
+                    example: false
+                  preinvoice?:
+                    type: boolean
+                    example: false
+                  tax_regime:
+                    type: string
+                    example: 601 - General de Ley Personas Morales
+                  cfdi:
+                    type: string
+                    example: G03 - Gastos en general
+                  client:
+                    type: object
+                    nullable: true
+                    properties:
+                      code:
+                        type: string
+                        example: COMPANY001
+                      social_reason:
+                        type: string
+                        example: EMPRESA SA DE CV
+                      rfc:
+                        type: string
+                        example: XAXX010101000
+        '401':
+          description: No autorizado
           content:
             application/json:
               schema:
@@ -4030,103 +1890,923 @@ paths:
                     items:
                       type: string
                     example:
-                    - Credenciales incorrectas
+                    - No authorization headers provided
+    patch:
+      summary: Actualizar una factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: Factura actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
+        '422':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Concept must be a valid concept
+        '401':
+          description: Se requieren permisos de administrador
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - User must have permissions
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                user:
+            example:
+              invoice:
+                payment_method: '03'
+                cfdi: G03
+    delete:
+      summary: Eliminar una factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Factura eliminada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Factura eliminada con éxito
+        '422':
+          description: La factura no está en estado preparado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Solo se pueden eliminar facturas en estado preparado o con error de timbrado
+        '401':
+          description: Se requieren permisos de administrador
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - User must have permissions
+  /issuing_companies/{issuing_company_id}/invoices/{id}/edit:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    get:
+      summary: Datos para edición de factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Datos para edición obtenidos exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  concept:
+                    type: string
+                    example: 5 - Factura al Contado
+                  series:
+                    type: string
+                    example: MAS
+                  invoice_date:
+                    type: string
+                    format: date
+                    example: '2026-05-14'
+                  payment_method:
+                    type: string
+                    example: 01 - Efectivo
+                  clients:
+                    type: array
+                    items:
+                      type: object
+                  payment_methods:
+                    type: array
+                    items:
+                      type: object
+                  tax_regimes:
+                    type: array
+                    items:
+                      type: object
+                  cfdis:
+                    type: array
+                    items:
+                      type: object
+                  concepts:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: Se requieren permisos de administrador
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - User must have permissions
+  /issuing_companies/{issuing_company_id}/invoices/{invoice_id}/stamps:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: invoice_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    post:
+      summary: Timbrar una factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Factura timbrada. Trae el UUID y el XML timbrado en texto plano (campo `xml`); también se obtiene con GET .../xml.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invoice stamped
+                  uuid:
+                    type: string
+                  sat_status:
+                    type: string
+                    example: stamped
+                  xml:
+                    type: string
+                    nullable: true
+                    description: XML del CFDI timbrado en texto plano. Es null si Comercial no lo entregó a tiempo; en ese caso se pide con GET .../xml.
+        '422':
+          description: La factura ya fue timbrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Solo se pueden timbrar facturas en estado preparado o con error de timbrado
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /issuing_companies/{issuing_company_id}/invoices/{invoice_id}/cancelate:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: invoice_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    post:
+      summary: Cancelar una factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: Cancelación de factura en proceso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Canceling invoice in progress
+        '422':
+          description: La factura ya fue cancelada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Invoice was canceled before or is not stamped.
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              cancellation:
+                cancellation_reason: '02'
+      description: 'Motivos del SAT: 01 (con UUID sustituto en `substitution_uuid`), 02, 03 y 04.'
+  /issuing_companies/{issuing_company_id}/invoices/{invoice_id}/document:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: invoice_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    get:
+      summary: Obtener PDF de la factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: PDF obtenido exitosamente
+        '404':
+          description: PDF no disponible
+          content:
+            application/pdf:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - PDF not available
+        '401':
+          description: No autorizado
+          content:
+            application/pdf:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /issuing_companies/{issuing_company_id}/invoices/{invoice_id}/invoice:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: invoice_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    get:
+      summary: Obtener el link del documento de la factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Link del documento obtenido exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_url:
+                    type: string
+                    example: https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...
+                    description: URL firmada y temporal del archivo (ActiveStorage), expira después de un tiempo limitado
+                required:
+                - file_url
+        '404':
+          description: Documento no disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - PDF not available
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /issuing_companies/{issuing_company_id}/invoices/{invoice_id}/xml:
+    parameters:
+    - name: issuing_company_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la empresa emisora
+    - name: invoice_id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID de la factura
+    get:
+      summary: Obtener el link del XML de la factura
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Link del XML obtenido exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_url:
+                    type: string
+                    example: https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...
+                    description: URL firmada y temporal del archivo (ActiveStorage), expira después de un tiempo limitado
+                required:
+                - file_url
+        '404':
+          description: XML no disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - XML not available
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /invoices/batches_stamp:
+    post:
+      summary: Timbrar varias facturas en lote
+      tags:
+      - Facturas
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: Timbrado de facturas en proceso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Timbrado en progreso
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Invoice 99 not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              invoice_ids:
+              - 1
+              - 2
+              - 3
+  /movements:
+    get:
+      summary: Listar movimientos de una factura
+      tags:
+      - Movimientos
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: invoice_id
+        in: query
+        schema:
+          type: integer
+        required: true
+        description: ID de la factura
+      - name: limit
+        in: query
+        schema:
+          type: integer
+        required: false
+        description: Número máximo de resultados
+      - name: offset
+        in: query
+        schema:
+          type: integer
+        required: false
+        description: Desplazamiento para paginación
+      - name: order_by_field
+        in: query
+        schema:
+          type: string
+        required: false
+        description: Campo por el cual ordenar los resultados
+      - name: order_by_direction
+        in: query
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+        required: false
+        description: Dirección de ordenamiento (ascendente o descendente)
+      responses:
+        '200':
+          description: Movimientos obtenidos exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
                   type: object
                   properties:
-                    email:
+                    id:
+                      type: integer
+                      example: 1
+                    concept:
                       type: string
-                      example: facturacion@admin.com
-                    password:
+                      example: Servidor Pro
+                    quantity:
+                      type: integer
+                      example: 2
+                    price:
                       type: string
-                      example: P455w0rd!
-                  required:
-                  - email
-                  - password
-              required:
-              - user
-  "/users":
+                      example: '2000.0'
+                    product:
+                      type: object
+                      nullable: true
+                      properties:
+                        code:
+                          type: string
+                          example: PRODUCT001
+                        name:
+                          type: string
+                          example: Servidor Pro
+                        description:
+                          type: string
+                          example: Renta de Servidor Pro
+                        unit_price:
+                          type: string
+                          example: '2000.0'
+                        unit_base:
+                          type: string
+                          example: Pieza
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
     post:
-      summary: Registrar un nuevo usuario
+      summary: Crear un nuevo movimiento
       tags:
-      - Usuarios
+      - Movimientos
+      security:
+      - bearerAuth: []
       parameters: []
       responses:
         '201':
-          description: Usuario creado exitosamente
+          description: Movimiento creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
         '422':
           description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Quantity can't be blank
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                user:
-                  "$ref": "#/components/schemas/user"
-              required:
-              - user
-  "/users/{id}":
+            example:
+              movement:
+                invoice_id: 1
+                product_code: PRO0001
+                quantity: 1
+                price: 2000
+                vat_percentage: 16
+                vat_retention_percentage: 0
+                ieps_percentage: 0
+  /movements/new:
+    get:
+      summary: Obtener datos para nuevo movimiento
+      tags:
+      - Movimientos
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Datos para nuevo movimiento obtenidos exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  product_codes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        code:
+                          type: string
+                          example: PRODUCT001
+                        name:
+                          type: string
+                          example: Servidor Pro
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /movements/{id}/edit:
     parameters:
     - name: id
       in: path
       schema:
         type: integer
       required: true
-      description: ID del usuario
-    patch:
-      summary: Actualizar el rol o estado de un usuario
+      description: ID del movimiento
+    get:
+      summary: Obtener datos para editar un movimiento
       tags:
-      - Usuarios
+      - Movimientos
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Datos para edición obtenidos exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  quantity:
+                    type: integer
+                    example: 2
+                  price:
+                    type: string
+                    example: '2000.0'
+                  product_code:
+                    type: string
+                    example: PRODUCT001
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        code:
+                          type: string
+                          example: PRODUCT001
+                        name:
+                          type: string
+                          example: Servidor Pro
+        '404':
+          description: Movimiento no encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Movement not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
+  /movements/{id}:
+    parameters:
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: ID del movimiento
+    patch:
+      summary: Actualizar un movimiento
+      tags:
+      - Movimientos
       security:
       - bearerAuth: []
       parameters: []
       responses:
         '200':
-          description: Usuario actualizado exitosamente
+          description: Movimiento actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
         '422':
           description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Quantity can't be blank
         '404':
-          description: Usuario no encontrado
+          description: Movimiento no encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Movement not found
         '401':
-          description: Se requieren permisos de superadministrador
+          description: Se requieren permisos de administrador
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - User must have permissions
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                role:
-                  type: string
-                  enum:
-                  - viewer
-                  - invoicer
-                  - admin
-                  - superadmin
-                  example: admin
-                status:
-                  type: string
-                  enum:
-                  - pending
-                  - approved
-                  example: approved
+            example:
+              movement:
+                quantity: 3
+    delete:
+      summary: Eliminar un movimiento
+      tags:
+      - Movimientos
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Movimiento eliminado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: success
+        '404':
+          description: Movimiento no encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - Movement not found
+        '401':
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - No authorization headers provided
 tags:
-- name: Usuarios
-  description: Registro de nuevos usuarios
 - name: Sesiones de Usuario
   description: Autenticación de usuarios
-- name: Refresh Token
-  description: Renovación de tokens de acceso
-- name: Información de Usuario
-  description: Datos del usuario autenticado
-- name: Verificación de Correo
-  description: Verificación de la dirección de correo del usuario autenticado
 - name: Compañías
   description: Gestión de compañías
 - name: Productos
@@ -4135,25 +2815,20 @@ tags:
   description: Gestión de direcciones de compañías
 - name: Empresas Emisoras
   description: Gestión de empresas emisoras de facturas
-- name: Invitaciones
-  description: Invitaciones para vincular usuarios con empresas emisoras
 - name: Facturas
   description: Gestión de facturas electrónicas bajo una empresa emisora
 - name: Movimientos
   description: Gestión de movimientos de facturas
 servers:
 - url: /
-  description: Acusa (este servidor)
-- url: https://facturacion-desarrollo-f897c52df65a.herokuapp.com
-  description: Facturación de Alain, desarrollo (solo para comparar)
+  description: Este servidor
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Pegue su llave de API (empieza con ak_) o un token obtenido en
-        /api/auth/token o /users/sessions.
+      description: Pegue su llave de API (empieza con ak_) o un token obtenido en /api/auth/token o /users/sessions.
   schemas:
     user:
       type: object
@@ -4210,10 +2885,7 @@ components:
         payment_method:
           type: string
           example: '01'
-          description: 01 = Efectivo, 02 = Cheque nominativo, 03 = Transferencia electrónica
-            de fondos, 04 = Tarjeta de crédito, 05 = Monedero electrónico, 06 = Dinero
-            electrónico, 28 = Tarjeta de débito, 29 = Tarjeta de servicios, 99 = Por
-            definir
+          description: 01 = Efectivo, 02 = Cheque nominativo, 03 = Transferencia electrónica de fondos, 04 = Tarjeta de crédito, 05 = Monedero electrónico, 06 = Dinero electrónico, 28 = Tarjeta de débito, 29 = Tarjeta de servicios, 99 = Por definir
         cfdi:
           type: string
           example: G03
@@ -4242,20 +2914,17 @@ components:
                 type: number
                 example: 16
                 nullable: true
-                description: Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Si se omite
-                  no se aplica IVA
+                description: Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Si se omite no se aplica IVA
               vat_retention_percentage:
                 type: number
                 example: 10.6
                 nullable: true
-                description: Porcentaje de retención de IVA (CPORCENTAJEIMPUESTO4).
-                  Si se omite no se aplica retención
+                description: Porcentaje de retención de IVA (CPORCENTAJEIMPUESTO4). Si se omite no se aplica retención
               ieps_percentage:
                 type: number
                 example: 1
                 nullable: true
-                description: Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Si se omite
-                  no se aplica IEPS
+                description: Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Si se omite no se aplica IEPS
             required:
             - product_code
             - quantity
@@ -4345,20 +3014,17 @@ components:
           type: number
           example: 16
           nullable: true
-          description: Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Si se omite no se
-            aplica IVA
+          description: Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Si se omite no se aplica IVA
         vat_retention_percentage:
           type: number
           example: 10.6
           nullable: true
-          description: Porcentaje de retención de IVA (CPORCENTAJEIMPUESTO4). Si se
-            omite no se aplica retención
+          description: Porcentaje de retención de IVA (CPORCENTAJEIMPUESTO4). Si se omite no se aplica retención
         ieps_percentage:
           type: number
           example: 1
           nullable: true
-          description: Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Si se omite no se
-            aplica IEPS
+          description: Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Si se omite no se aplica IEPS
         invoice_id:
           type: integer
           example: 1

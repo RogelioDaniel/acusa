@@ -1,0 +1,4701 @@
+{
+ "openapi": "3.0.1",
+ "info": {
+  "title": "Acusa · API de facturación",
+  "version": "v1",
+  "description": "API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial.\n\n**Autenticación.** Envíe su llave de API (empieza con `ak_`) en la cabecera `Authorization: Bearer <llave>`. También puede cambiarla por un token de una hora con `POST /api/auth/token` (cabecera `x-api-key`). Para probar aquí, pegue la llave arriba y pulse «Obtener token».\n\n**Flujo básico.** Dar de alta la empresa emisora, el producto y la compañía (cliente); crear la factura con sus movimientos; timbrarla (`stamps`, que devuelve el UUID y el XML en texto plano); consultar el XML y el PDF; cancelarla si hace falta.\n\nLos errores de validación responden `422` con `{ \"errors\": [ ... ] }`. Las operaciones que escriben en CONTPAQi requieren un Acusa Worker en línea."
+ },
+ "paths": {
+  "/users/sessions": {
+   "post": {
+    "summary": "Iniciar sesión",
+    "tags": [
+     "Sesiones de Usuario"
+    ],
+    "parameters": [],
+    "responses": {
+     "201": {
+      "description": "Sesión iniciada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "access_token": {
+           "type": "string",
+           "example": "eyJhbGciOiJIUzI1NiJ9...",
+           "description": "JWT de acceso, se envía como Bearer token en cada solicitud"
+          },
+          "refresh_token": {
+           "type": "string",
+           "example": "eyJhbGciOiJIUzI1NiJ9...",
+           "description": "Token para renovar el access_token en /users/refresh_token"
+          },
+          "user_id": {
+           "type": "integer",
+           "example": 1
+          },
+          "role": {
+           "type": "string",
+           "example": "admin",
+           "enum": [
+            "viewer",
+            "invoicer",
+            "admin",
+            "superadmin"
+           ]
+          }
+         },
+         "required": [
+          "access_token",
+          "refresh_token",
+          "user_id",
+          "role"
+         ]
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Credenciales incorrectas",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Credenciales incorrectas"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "user": {
+         "email": "usuario@empresa.com",
+         "password": "********"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies": {
+   "get": {
+    "summary": "Listar empresas emisoras del usuario",
+    "tags": [
+     "Empresas Emisoras"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Número máximo de resultados"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Desplazamiento para paginación"
+     },
+     {
+      "name": "order_by_field",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false,
+      "description": "Campo por el cual ordenar los resultados"
+     },
+     {
+      "name": "order_by_direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      },
+      "required": false,
+      "description": "Dirección de ordenamiento (ascendente o descendente)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Empresas emisoras obtenidas exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "example": 1
+           },
+           "social_reason": {
+            "type": "string",
+            "example": "EMPRESA SA DE CV"
+           },
+           "rfc": {
+            "type": "string",
+            "example": "XAXX010101000"
+           },
+           "database_name": {
+            "type": "string",
+            "example": "db_acme"
+           },
+           "users_count": {
+            "type": "integer",
+            "example": 3
+           },
+           "invoices_count": {
+            "type": "integer",
+            "example": 12
+           },
+           "active": {
+            "type": "boolean",
+            "example": true
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Crear una nueva empresa emisora",
+    "tags": [
+     "Empresas Emisoras"
+    ],
+    "description": "Crea la empresa emisora. Para poder timbrar facturas, después de crearla sube su Certificado de Sello Digital con POST /issuing_companies/{issuing_company_id}/upload_seals.",
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Empresa emisora creada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Datos inválidos",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Rfc can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "issuing_company": {
+         "social_reason": "Mi Empresa SA de CV",
+         "rfc": "AAA010101AAA",
+         "database_name": "adMI_EMPRESA"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    }
+   ],
+   "get": {
+    "summary": "Obtener los datos de una empresa emisora",
+    "tags": [
+     "Empresas Emisoras"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Empresa emisora obtenida exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "social_reason": {
+           "type": "string",
+           "example": "EMPRESA SA DE CV"
+          },
+          "rfc": {
+           "type": "string",
+           "example": "XAXX010101000"
+          },
+          "database_name": {
+           "type": "string",
+           "example": "db_acme"
+          },
+          "active": {
+           "type": "boolean",
+           "example": true
+          },
+          "cer_filename": {
+           "type": "string",
+           "example": "csd_test.cer",
+           "nullable": true
+          },
+          "key_filename": {
+           "type": "string",
+           "example": "csd_test.key",
+           "nullable": true
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Empresa emisora no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "IssuingCompany not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "summary": "Actualizar una empresa emisora",
+    "tags": [
+     "Empresas Emisoras"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Empresa emisora actualizada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Datos inválidos",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Rfc can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Empresa emisora no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "IssuingCompany not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "issuing_company": {
+         "social_reason": "Mi Empresa SA de CV",
+         "rfc": "AAA010101AAA",
+         "database_name": "adMI_EMPRESA"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/companies": {
+   "get": {
+    "summary": "Listar compañías del usuario",
+    "tags": [
+     "Compañías"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Número máximo de resultados"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Desplazamiento para paginación"
+     },
+     {
+      "name": "order_by_field",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false,
+      "description": "Campo por el cual ordenar los resultados"
+     },
+     {
+      "name": "order_by_direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      },
+      "required": false,
+      "description": "Dirección de ordenamiento (ascendente o descendente)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Compañías obtenidas exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "example": 1
+           },
+           "code": {
+            "type": "string",
+            "example": "COMPANY001"
+           },
+           "social_reason": {
+            "type": "string",
+            "example": "EMPRESA SA DE CV"
+           },
+           "rfc": {
+            "type": "string",
+            "example": "XAXX010101000"
+           },
+           "task_id": {
+            "type": "integer",
+            "example": 2885,
+            "nullable": true
+           },
+           "status": {
+            "type": "string",
+            "example": "pending",
+            "enum": [
+             "pending",
+             "completed",
+             "failed"
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Crear una nueva compañía",
+    "tags": [
+     "Compañías"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "201": {
+      "description": "Compañía creada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "code": {
+           "type": "string",
+           "example": "COMPANY001"
+          },
+          "social_reason": {
+           "type": "string",
+           "example": "EMPRESA SA DE CV"
+          },
+          "rfc": {
+           "type": "string",
+           "example": "XAXX010101000"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Social reason can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "company": {
+         "social_reason": "Cliente Ejemplo SA de CV",
+         "rfc": "XAXX010101000",
+         "client_type": 1,
+         "credit_limit": 50000
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/companies/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la compañía"
+    }
+   ],
+   "get": {
+    "summary": "Obtener los datos de una compañía",
+    "tags": [
+     "Compañías"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Compañía obtenida exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "code": {
+           "type": "string",
+           "example": "COMPANY001"
+          },
+          "social_reason": {
+           "type": "string",
+           "example": "EMPRESA SA DE CV"
+          },
+          "rfc": {
+           "type": "string",
+           "example": "XAXX010101000"
+          },
+          "task_id": {
+           "type": "integer",
+           "example": 2885,
+           "nullable": true
+          },
+          "status": {
+           "type": "string",
+           "example": "pending",
+           "enum": [
+            "pending",
+            "completed",
+            "failed"
+           ]
+          },
+          "issuing_companies": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer",
+              "example": 1
+             },
+             "social_reason": {
+              "type": "string",
+              "example": "EMISORA SA DE CV"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Compañía no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Company not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "summary": "Actualizar una compañía",
+    "tags": [
+     "Compañías"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Compañía actualizada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Client type must be either 1 (client), 2 (client/supplier) or 3 (supplier)"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Compañía no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Company not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "company": {
+         "social_reason": "Cliente Ejemplo SA de CV",
+         "credit_limit": 80000
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Eliminar una compañía",
+    "tags": [
+     "Compañías"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Compañía eliminada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Compañía no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Company not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/companies/{id}/edit": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la compañía"
+    }
+   ],
+   "get": {
+    "summary": "Obtener datos de una compañía para edición",
+    "tags": [
+     "Compañías"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos de la compañía obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "code": {
+           "type": "string",
+           "example": "COMPANY001"
+          },
+          "client_type": {
+           "type": "integer",
+           "example": 1
+          },
+          "credit_limit": {
+           "type": "number",
+           "example": 50000
+          },
+          "rfc": {
+           "type": "string",
+           "example": "XAXX010101000"
+          },
+          "social_reason": {
+           "type": "string",
+           "example": "EMPRESA SA DE CV"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Compañía no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Company not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/companies/{company_id}/addresses": {
+   "parameters": [
+    {
+     "name": "company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la compañía"
+    }
+   ],
+   "get": {
+    "summary": "Listar direcciones de una compañía",
+    "tags": [
+     "Direcciones"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Número máximo de resultados"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Desplazamiento para paginación"
+     },
+     {
+      "name": "order_by_field",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false,
+      "description": "Campo por el cual ordenar los resultados"
+     },
+     {
+      "name": "order_by_direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      },
+      "required": false,
+      "description": "Dirección de ordenamiento (ascendente o descendente)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Direcciones obtenidas exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "example": 1
+           },
+           "street": {
+            "type": "string",
+            "example": "Av. Insurgentes Sur 123"
+           },
+           "neighborhood": {
+            "type": "string",
+            "example": "Del Valle"
+           },
+           "zip_code": {
+            "type": "string",
+            "example": "03100"
+           },
+           "city": {
+            "type": "string",
+            "example": "Ciudad de México"
+           },
+           "state": {
+            "type": "string",
+            "example": "CDMX"
+           },
+           "country": {
+            "type": "string",
+            "example": "México"
+           },
+           "status": {
+            "type": "string",
+            "example": "completed",
+            "enum": [
+             "pending",
+             "completed",
+             "failed"
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Crear una nueva dirección",
+    "tags": [
+     "Direcciones"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "201": {
+      "description": "Dirección creada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Street can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "address": {
+         "street": "Av. Reforma 100",
+         "neighborhood": "Juárez",
+         "zip_code": "06600",
+         "city": "Ciudad de México",
+         "state": "CDMX",
+         "country": "México",
+         "address_type": 1,
+         "catalog_type": 1
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/companies/{company_id}/addresses/{id}/edit": {
+   "parameters": [
+    {
+     "name": "company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la compañía"
+    },
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la dirección"
+    }
+   ],
+   "get": {
+    "summary": "Obtener datos de una dirección para edición",
+    "tags": [
+     "Direcciones"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos de la dirección obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "street": {
+           "type": "string",
+           "example": "Av. Insurgentes Sur 123"
+          },
+          "neighborhood": {
+           "type": "string",
+           "example": "Del Valle"
+          },
+          "zip_code": {
+           "type": "string",
+           "example": "03100"
+          },
+          "city": {
+           "type": "string",
+           "example": "Ciudad de México"
+          },
+          "state": {
+           "type": "string",
+           "example": "CDMX"
+          },
+          "country": {
+           "type": "string",
+           "example": "México"
+          },
+          "status": {
+           "type": "string",
+           "example": "completed",
+           "enum": [
+            "pending",
+            "completed",
+            "failed"
+           ]
+          },
+          "address_type": {
+           "type": "integer",
+           "example": 0,
+           "description": "0 = fiscal, 1 = envío"
+          },
+          "catalog_type": {
+           "type": "integer",
+           "example": 1,
+           "description": "1 = cliente, 2 = proveedor, 3 = documentos, 4 = empresas"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Dirección no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Address not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/companies/{company_id}/addresses/{id}": {
+   "parameters": [
+    {
+     "name": "company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la compañía"
+    },
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la dirección"
+    }
+   ],
+   "patch": {
+    "summary": "Actualizar una dirección",
+    "tags": [
+     "Direcciones"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Dirección actualizada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Street can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Dirección no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Address not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "address": {
+         "street": "Av. Reforma 200",
+         "zip_code": "06700"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Eliminar una dirección",
+    "tags": [
+     "Direcciones"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Dirección eliminada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Dirección no encontrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Address not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/products": {
+   "get": {
+    "summary": "Listar productos activos",
+    "tags": [
+     "Productos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Número máximo de resultados"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Desplazamiento para paginación"
+     },
+     {
+      "name": "order_by_field",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false,
+      "description": "Campo por el cual ordenar los resultados"
+     },
+     {
+      "name": "order_by_direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      },
+      "required": false,
+      "description": "Dirección de ordenamiento (ascendente o descendente)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Productos obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "example": 1
+           },
+           "code": {
+            "type": "string",
+            "example": "PRODUCT001"
+           },
+           "name": {
+            "type": "string",
+            "example": "Servidor Pro"
+           },
+           "unit_base": {
+            "type": "string",
+            "example": "Unidad de Servicio"
+           },
+           "description": {
+            "type": "string",
+            "example": "Renta de Servidor Pro"
+           },
+           "price": {
+            "type": "string",
+            "example": "2000.0"
+           },
+           "series_sat": {
+            "type": "string",
+            "example": "81112200"
+           },
+           "task_id": {
+            "type": "integer",
+            "example": 2885,
+            "nullable": true
+           },
+           "status": {
+            "type": "string",
+            "example": "pending",
+            "enum": [
+             "pending",
+             "completed",
+             "failed"
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Crear un nuevo producto",
+    "tags": [
+     "Productos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "201": {
+      "description": "Producto creado exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "code": {
+           "type": "string",
+           "example": "PRODUCT001"
+          },
+          "name": {
+           "type": "string",
+           "example": "Servidor Pro"
+          },
+          "unit_base": {
+           "type": "string",
+           "example": "Unidad de Servicio"
+          },
+          "description": {
+           "type": "string",
+           "example": "Renta de Servidor Pro"
+          },
+          "price": {
+           "type": "string",
+           "example": "2000.0"
+          },
+          "series_sat": {
+           "type": "string",
+           "example": "81112200"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Name can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "product": {
+         "name": "Renta de servidor",
+         "price": 2000,
+         "description": "Renta mensual de servidor",
+         "unit_base": "Pieza",
+         "series_sat": "81112200",
+         "product_type": 3,
+         "issuing_company_id": 1,
+         "extra_texts_attributes": [
+          {
+           "extra_text": "Periodo mensual"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/products/new": {
+   "get": {
+    "summary": "Obtener datos para nuevo producto",
+    "tags": [
+     "Productos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos para nuevo producto obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "unit_bases": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "example": "Pieza"
+           }
+          },
+          "product_types": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer",
+              "example": 1
+             },
+             "name": {
+              "type": "string",
+              "example": "Materia Prima"
+             }
+            }
+           }
+          },
+          "issuing_companies": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer",
+              "example": 1
+             },
+             "social_reason": {
+              "type": "string",
+              "example": "EMPRESA EMISORA SA DE CV"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/products/{id}/edit": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID del producto"
+    }
+   ],
+   "get": {
+    "summary": "Obtener datos de un producto para edición",
+    "tags": [
+     "Productos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos del producto obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "code": {
+           "type": "string",
+           "example": "PRODUCT001"
+          },
+          "name": {
+           "type": "string",
+           "example": "Servidor Pro"
+          },
+          "price": {
+           "type": "string",
+           "example": "2000.00"
+          },
+          "description": {
+           "type": "string",
+           "example": "Renta de Servidor Pro"
+          },
+          "unit_base": {
+           "type": "string",
+           "example": "Unidad de Servicio"
+          },
+          "series_sat": {
+           "type": "string",
+           "example": "81112200"
+          },
+          "extra_text1": {
+           "type": "string",
+           "example": "text 1",
+           "nullable": true
+          },
+          "extra_text2": {
+           "type": "string",
+           "example": "text 2",
+           "nullable": true
+          },
+          "extra_text3": {
+           "type": "string",
+           "example": "text 3",
+           "nullable": true
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Producto no encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Product not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/products/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID del producto"
+    }
+   ],
+   "patch": {
+    "summary": "Actualizar un producto",
+    "tags": [
+     "Productos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Producto actualizado exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Name can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Producto no encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Product not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "product": {
+         "name": "Renta de servidor",
+         "price": 2500
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Eliminar un producto",
+    "tags": [
+     "Productos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Producto eliminado exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Producto no encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Product not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    }
+   ],
+   "get": {
+    "summary": "Listar facturas de la empresa emisora",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Número máximo de resultados"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Desplazamiento para paginación"
+     },
+     {
+      "name": "order_by_field",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false,
+      "description": "Campo por el cual ordenar los resultados"
+     },
+     {
+      "name": "order_by_direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      },
+      "required": false,
+      "description": "Dirección de ordenamiento (ascendente o descendente)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Facturas obtenidas exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "example": 1
+           },
+           "concept": {
+            "type": "string",
+            "example": "5"
+           },
+           "series": {
+            "type": "string",
+            "example": "MAS"
+           },
+           "invoice_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-05-14"
+           },
+           "client": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+             "id": {
+              "type": "integer",
+              "example": 1
+             },
+             "code": {
+              "type": "string",
+              "example": "COMPANY001"
+             },
+             "social_reason": {
+              "type": "string",
+              "example": "EMPRESA SA DE CV"
+             }
+            }
+           },
+           "payment_method": {
+            "type": "string",
+            "example": "01 - Efectivo"
+           },
+           "sat_status": {
+            "type": "string",
+            "example": "prepared"
+           },
+           "error_message": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+           },
+           "folio": {
+            "type": "string",
+            "nullable": true,
+            "example": "12345"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Crear una factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "201": {
+      "description": "Factura creada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "concept": {
+           "type": "string",
+           "example": "5"
+          },
+          "series": {
+           "type": "string",
+           "example": "MAS"
+          },
+          "invoice_date": {
+           "type": "string",
+           "format": "date",
+           "example": "2026-05-14"
+          },
+          "client": {
+           "type": "object",
+           "nullable": true,
+           "properties": {
+            "id": {
+             "type": "integer",
+             "example": 1
+            },
+            "code": {
+             "type": "string",
+             "example": "COMPANY001"
+            },
+            "social_reason": {
+             "type": "string",
+             "example": "EMPRESA SA DE CV"
+            }
+           }
+          },
+          "payment_method": {
+           "type": "string",
+           "example": "01 - Efectivo"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Concept can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "invoice": {
+         "concept": "5",
+         "series": "A",
+         "invoice_date": "2026-11-12",
+         "client_code": "CLI0001",
+         "payment_method": "03",
+         "cfdi": "G03",
+         "tax_regime": "601",
+         "movements_attributes": [
+          {
+           "product_code": "PRO0001",
+           "quantity": 2,
+           "price": 2000,
+           "vat_percentage": 16,
+           "vat_retention_percentage": 0,
+           "ieps_percentage": 0
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/new": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    }
+   ],
+   "get": {
+    "summary": "Obtener datos para nueva factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos para nueva factura obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "clients": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "products": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "payment_methods": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "tax_regimes": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "cfdis": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "concepts": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "issuing_companies": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{id}": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "get": {
+    "summary": "Detalle de una factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Detalle de factura obtenido exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "concept": {
+           "type": "string",
+           "example": "5"
+          },
+          "series": {
+           "type": "string",
+           "example": "MAS"
+          },
+          "invoice_date": {
+           "type": "string",
+           "format": "date",
+           "example": "2026-05-14"
+          },
+          "payment_method": {
+           "type": "string",
+           "example": "01 - Efectivo"
+          },
+          "sat_status": {
+           "type": "string",
+           "example": "prepared"
+          },
+          "uuid": {
+           "type": "string",
+           "nullable": true,
+           "example": null
+          },
+          "cancellation_reason": {
+           "type": "string",
+           "nullable": true,
+           "example": null
+          },
+          "error_message": {
+           "type": "string",
+           "nullable": true,
+           "example": null
+          },
+          "folio": {
+           "type": "string",
+           "nullable": true,
+           "example": "12345"
+          },
+          "pdf?": {
+           "type": "boolean",
+           "example": false
+          },
+          "xml?": {
+           "type": "boolean",
+           "example": false
+          },
+          "preinvoice?": {
+           "type": "boolean",
+           "example": false
+          },
+          "tax_regime": {
+           "type": "string",
+           "example": "601 - General de Ley Personas Morales"
+          },
+          "cfdi": {
+           "type": "string",
+           "example": "G03 - Gastos en general"
+          },
+          "client": {
+           "type": "object",
+           "nullable": true,
+           "properties": {
+            "code": {
+             "type": "string",
+             "example": "COMPANY001"
+            },
+            "social_reason": {
+             "type": "string",
+             "example": "EMPRESA SA DE CV"
+            },
+            "rfc": {
+             "type": "string",
+             "example": "XAXX010101000"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "summary": "Actualizar una factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Factura actualizada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Concept must be a valid concept"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "invoice": {
+         "payment_method": "03",
+         "cfdi": "G03"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Eliminar una factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Factura eliminada exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "Factura eliminada con éxito"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "La factura no está en estado preparado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Solo se pueden eliminar facturas en estado preparado o con error de timbrado"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{id}/edit": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "get": {
+    "summary": "Datos para edición de factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos para edición obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "concept": {
+           "type": "string",
+           "example": "5 - Factura al Contado"
+          },
+          "series": {
+           "type": "string",
+           "example": "MAS"
+          },
+          "invoice_date": {
+           "type": "string",
+           "format": "date",
+           "example": "2026-05-14"
+          },
+          "payment_method": {
+           "type": "string",
+           "example": "01 - Efectivo"
+          },
+          "clients": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "payment_methods": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "tax_regimes": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "cfdis": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "concepts": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/stamps": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "invoice_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "post": {
+    "summary": "Timbrar una factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Factura timbrada. Trae el UUID y el XML timbrado en texto plano (campo `xml`); también se obtiene con GET .../xml.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "Invoice stamped"
+          },
+          "uuid": {
+           "type": "string"
+          },
+          "sat_status": {
+           "type": "string",
+           "example": "stamped"
+          },
+          "xml": {
+           "type": "string",
+           "nullable": true,
+           "description": "XML del CFDI timbrado en texto plano. Es null si Comercial no lo entregó a tiempo; en ese caso se pide con GET .../xml."
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "La factura ya fue timbrada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Solo se pueden timbrar facturas en estado preparado o con error de timbrado"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/cancelate": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "invoice_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "post": {
+    "summary": "Cancelar una factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Cancelación de factura en proceso",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "Canceling invoice in progress"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "La factura ya fue cancelada",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Invoice was canceled before or is not stamped."
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "cancellation": {
+         "cancellation_reason": "02"
+        }
+       }
+      }
+     }
+    },
+    "description": "Motivos del SAT: 01 (con UUID sustituto en `substitution_uuid`), 02, 03 y 04."
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/document": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "invoice_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "get": {
+    "summary": "Obtener PDF de la factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "PDF obtenido exitosamente"
+     },
+     "404": {
+      "description": "PDF no disponible",
+      "content": {
+       "application/pdf": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "PDF not available"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/pdf": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/invoice": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "invoice_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "get": {
+    "summary": "Obtener el link del documento de la factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Link del documento obtenido exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "file_url": {
+           "type": "string",
+           "example": "https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...",
+           "description": "URL firmada y temporal del archivo (ActiveStorage), expira después de un tiempo limitado"
+          }
+         },
+         "required": [
+          "file_url"
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Documento no disponible",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "PDF not available"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/issuing_companies/{issuing_company_id}/invoices/{invoice_id}/xml": {
+   "parameters": [
+    {
+     "name": "issuing_company_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la empresa emisora"
+    },
+    {
+     "name": "invoice_id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID de la factura"
+    }
+   ],
+   "get": {
+    "summary": "Obtener el link del XML de la factura",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Link del XML obtenido exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "file_url": {
+           "type": "string",
+           "example": "https://facturacion.s3.amazonaws.com/invoice.pdf?X-Amz-Signature=...",
+           "description": "URL firmada y temporal del archivo (ActiveStorage), expira después de un tiempo limitado"
+          }
+         },
+         "required": [
+          "file_url"
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "XML no disponible",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "XML not available"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/invoices/batches_stamp": {
+   "post": {
+    "summary": "Timbrar varias facturas en lote",
+    "tags": [
+     "Facturas"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Timbrado de facturas en proceso",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "Timbrado en progreso"
+          },
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Invoice 99 not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "invoice_ids": [
+         1,
+         2,
+         3
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/movements": {
+   "get": {
+    "summary": "Listar movimientos de una factura",
+    "tags": [
+     "Movimientos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "invoice_id",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true,
+      "description": "ID de la factura"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Número máximo de resultados"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "required": false,
+      "description": "Desplazamiento para paginación"
+     },
+     {
+      "name": "order_by_field",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false,
+      "description": "Campo por el cual ordenar los resultados"
+     },
+     {
+      "name": "order_by_direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      },
+      "required": false,
+      "description": "Dirección de ordenamiento (ascendente o descendente)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Movimientos obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "example": 1
+           },
+           "concept": {
+            "type": "string",
+            "example": "Servidor Pro"
+           },
+           "quantity": {
+            "type": "integer",
+            "example": 2
+           },
+           "price": {
+            "type": "string",
+            "example": "2000.0"
+           },
+           "product": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+             "code": {
+              "type": "string",
+              "example": "PRODUCT001"
+             },
+             "name": {
+              "type": "string",
+              "example": "Servidor Pro"
+             },
+             "description": {
+              "type": "string",
+              "example": "Renta de Servidor Pro"
+             },
+             "unit_price": {
+              "type": "string",
+              "example": "2000.0"
+             },
+             "unit_base": {
+              "type": "string",
+              "example": "Pieza"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Crear un nuevo movimiento",
+    "tags": [
+     "Movimientos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "201": {
+      "description": "Movimiento creado exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Quantity can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "movement": {
+         "invoice_id": 1,
+         "product_code": "PRO0001",
+         "quantity": 1,
+         "price": 2000,
+         "vat_percentage": 16,
+         "vat_retention_percentage": 0,
+         "ieps_percentage": 0
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/movements/new": {
+   "get": {
+    "summary": "Obtener datos para nuevo movimiento",
+    "tags": [
+     "Movimientos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos para nuevo movimiento obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "product_codes": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer",
+              "example": 1
+             },
+             "code": {
+              "type": "string",
+              "example": "PRODUCT001"
+             },
+             "name": {
+              "type": "string",
+              "example": "Servidor Pro"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/movements/{id}/edit": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID del movimiento"
+    }
+   ],
+   "get": {
+    "summary": "Obtener datos para editar un movimiento",
+    "tags": [
+     "Movimientos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Datos para edición obtenidos exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "example": 1
+          },
+          "quantity": {
+           "type": "integer",
+           "example": 2
+          },
+          "price": {
+           "type": "string",
+           "example": "2000.0"
+          },
+          "product_code": {
+           "type": "string",
+           "example": "PRODUCT001"
+          },
+          "products": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer",
+              "example": 1
+             },
+             "code": {
+              "type": "string",
+              "example": "PRODUCT001"
+             },
+             "name": {
+              "type": "string",
+              "example": "Servidor Pro"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Movimiento no encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Movement not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/movements/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "schema": {
+      "type": "integer"
+     },
+     "required": true,
+     "description": "ID del movimiento"
+    }
+   ],
+   "patch": {
+    "summary": "Actualizar un movimiento",
+    "tags": [
+     "Movimientos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "Movimiento actualizado exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Error de validación",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Quantity can't be blank"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Movimiento no encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Movement not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Se requieren permisos de administrador",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "User must have permissions"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       },
+       "example": {
+        "movement": {
+         "quantity": 3
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Eliminar un movimiento",
+    "tags": [
+     "Movimientos"
+    ],
+    "security": [
+     {
+      "bearerAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Movimiento eliminado exitosamente",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "success"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Movimiento no encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "Movement not found"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "No autorizado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           },
+           "example": [
+            "No authorization headers provided"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "tags": [
+  {
+   "name": "Sesiones de Usuario",
+   "description": "Autenticación de usuarios"
+  },
+  {
+   "name": "Compañías",
+   "description": "Gestión de compañías"
+  },
+  {
+   "name": "Productos",
+   "description": "Gestión de productos"
+  },
+  {
+   "name": "Direcciones",
+   "description": "Gestión de direcciones de compañías"
+  },
+  {
+   "name": "Empresas Emisoras",
+   "description": "Gestión de empresas emisoras de facturas"
+  },
+  {
+   "name": "Facturas",
+   "description": "Gestión de facturas electrónicas bajo una empresa emisora"
+  },
+  {
+   "name": "Movimientos",
+   "description": "Gestión de movimientos de facturas"
+  }
+ ],
+ "servers": [
+  {
+   "url": "/",
+   "description": "Este servidor"
+  }
+ ],
+ "components": {
+  "securitySchemes": {
+   "bearerAuth": {
+    "type": "http",
+    "scheme": "bearer",
+    "bearerFormat": "JWT",
+    "description": "Pegue su llave de API (empieza con ak_) o un token obtenido en /api/auth/token o /users/sessions."
+   }
+  },
+  "schemas": {
+   "user": {
+    "type": "object",
+    "properties": {
+     "email": {
+      "type": "string",
+      "example": "facturacion@admin.com"
+     },
+     "password": {
+      "type": "string",
+      "example": "P455w0rd!"
+     },
+     "password_confirmation": {
+      "type": "string",
+      "example": "P455w0rd!"
+     }
+    },
+    "required": [
+     "email",
+     "password",
+     "password_confirmation"
+    ]
+   },
+   "company": {
+    "type": "object",
+    "properties": {
+     "client_type": {
+      "type": "integer",
+      "example": 1
+     },
+     "credit_limit": {
+      "type": "integer",
+      "example": 50000
+     },
+     "rfc": {
+      "type": "string",
+      "example": "XAXX010101000"
+     },
+     "social_reason": {
+      "type": "string",
+      "example": "EMPRESA SA DE CV"
+     }
+    },
+    "required": [
+     "client_type",
+     "credit_limit",
+     "rfc",
+     "social_reason"
+    ]
+   },
+   "invoice": {
+    "type": "object",
+    "properties": {
+     "concept": {
+      "type": "string",
+      "example": "5"
+     },
+     "series": {
+      "type": "string",
+      "example": "A"
+     },
+     "invoice_date": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-05-14"
+     },
+     "client_code": {
+      "type": "string",
+      "example": "COMPANY001"
+     },
+     "payment_method": {
+      "type": "string",
+      "example": "01",
+      "description": "01 = Efectivo, 02 = Cheque nominativo, 03 = Transferencia electrónica de fondos, 04 = Tarjeta de crédito, 05 = Monedero electrónico, 06 = Dinero electrónico, 28 = Tarjeta de débito, 29 = Tarjeta de servicios, 99 = Por definir"
+     },
+     "cfdi": {
+      "type": "string",
+      "example": "G03",
+      "description": "Uso del CFDI (ver catálogo en /issuing_companies/{id}/invoices/new)"
+     },
+     "tax_regime": {
+      "type": "string",
+      "example": "601",
+      "description": "Régimen fiscal (ver catálogo en /issuing_companies/{id}/invoices/new)"
+     },
+     "movements_attributes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "product_code": {
+         "type": "string",
+         "example": "PRODUCT001"
+        },
+        "quantity": {
+         "type": "integer",
+         "example": 2
+        },
+        "price": {
+         "type": "number",
+         "example": 2000.0,
+         "nullable": true,
+         "description": "Si se omite se usa el precio del producto"
+        },
+        "vat_percentage": {
+         "type": "number",
+         "example": 16,
+         "nullable": true,
+         "description": "Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Si se omite no se aplica IVA"
+        },
+        "vat_retention_percentage": {
+         "type": "number",
+         "example": 10.6,
+         "nullable": true,
+         "description": "Porcentaje de retención de IVA (CPORCENTAJEIMPUESTO4). Si se omite no se aplica retención"
+        },
+        "ieps_percentage": {
+         "type": "number",
+         "example": 1,
+         "nullable": true,
+         "description": "Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Si se omite no se aplica IEPS"
+        }
+       },
+       "required": [
+        "product_code",
+        "quantity"
+       ]
+      }
+     }
+    },
+    "required": [
+     "concept",
+     "series",
+     "invoice_date",
+     "client_code",
+     "payment_method",
+     "cfdi",
+     "tax_regime"
+    ]
+   },
+   "issuing_company": {
+    "type": "object",
+    "properties": {
+     "social_reason": {
+      "type": "string",
+      "example": "EMPRESA EMISORA SA DE CV"
+     },
+     "rfc": {
+      "type": "string",
+      "example": "EEM010101AAA"
+     },
+     "database_name": {
+      "type": "string",
+      "example": "db_empresa_emisora",
+      "description": "Nombre de la base de datos en ContPAQ"
+     }
+    },
+    "required": [
+     "social_reason",
+     "rfc",
+     "database_name"
+    ]
+   },
+   "product": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "example": "Servidor Pro"
+     },
+     "price": {
+      "type": "string",
+      "example": "2000.00"
+     },
+     "issuing_company_id": {
+      "type": "integer",
+      "example": 1,
+      "description": "ID de la empresa emisora a la que pertenece el producto"
+     },
+     "description": {
+      "type": "string",
+      "example": "Renta de Servidor Pro"
+     },
+     "unit_base": {
+      "type": "string",
+      "example": "Unidad de Servicio"
+     },
+     "series_sat": {
+      "type": "string",
+      "example": "81112200"
+     },
+     "product_type": {
+      "type": "integer",
+      "example": 1,
+      "description": "1: materia prima, 2: producto terminado, 3: servicio"
+     },
+     "extra_texts_attributes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "extra_text": {
+         "type": "string",
+         "example": "Texto adicional para la factura"
+        }
+       },
+       "required": [
+        "extra_text"
+       ]
+      }
+     }
+    },
+    "required": [
+     "name",
+     "price",
+     "description",
+     "unit_base",
+     "series_sat",
+     "product_type"
+    ]
+   },
+   "movement": {
+    "type": "object",
+    "properties": {
+     "product_code": {
+      "type": "string",
+      "example": "SERV001"
+     },
+     "quantity": {
+      "type": "integer",
+      "example": 2
+     },
+     "price": {
+      "type": "number",
+      "example": 2000.0,
+      "nullable": true,
+      "description": "Si se omite se usa el precio del producto"
+     },
+     "vat_percentage": {
+      "type": "number",
+      "example": 16,
+      "nullable": true,
+      "description": "Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Si se omite no se aplica IVA"
+     },
+     "vat_retention_percentage": {
+      "type": "number",
+      "example": 10.6,
+      "nullable": true,
+      "description": "Porcentaje de retención de IVA (CPORCENTAJEIMPUESTO4). Si se omite no se aplica retención"
+     },
+     "ieps_percentage": {
+      "type": "number",
+      "example": 1,
+      "nullable": true,
+      "description": "Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Si se omite no se aplica IEPS"
+     },
+     "invoice_id": {
+      "type": "integer",
+      "example": 1
+     }
+    },
+    "required": [
+     "product_code",
+     "quantity",
+     "invoice_id"
+    ]
+   }
+  }
+ }
+}
