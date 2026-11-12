@@ -40,7 +40,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Configuración -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer Grid.Column="0" x:Name="PanelConfig" VerticalScrollBarVisibility="Auto">
                 <Border Style="{StaticResource Tarjeta}" Margin="0,0,6,0">
                     <StackPanel>
                         <TextBlock Text="Conexión" FontSize="17" FontWeight="Bold"/>
@@ -63,10 +63,16 @@
                         <CheckBox x:Name="CheckTimbrado"><TextBlock TextWrapping="Wrap" Text="Permitir timbrar y cancelar (gasta timbres, avisa al SAT)"/></CheckBox>
                         <TextBlock Style="{StaticResource Etiqueta}" Text="Contraseña del certificado (CSD)"/>
                         <PasswordBox x:Name="CajaCsd"/>
+                        <CheckBox x:Name="CheckRecordarCsd"><TextBlock TextWrapping="Wrap" Text="Recordar la contraseña cifrada en este equipo (para que timbre tras un reinicio automático)"/></CheckBox>
+                        <TextBlock Style="{StaticResource Etiqueta}" Text="Contraseña del usuario del SDK (para el servicio; vacía si SUPERVISOR no la tiene)"/>
+                        <PasswordBox x:Name="CajaClaveSdk"/>
                         <CheckBox x:Name="CheckCsdComercial"><TextBlock TextWrapping="Wrap" Text="No usar contraseña propia: que Comercial la tenga guardada"/></CheckBox>
                         <TextBlock Style="{StaticResource Etiqueta}" Text="Clientes con código fuera de PRUEBA permitidos"/>
                         <TextBox x:Name="CajaClientes" ToolTip="Códigos separados por coma. Solo para probar con un receptor real."/>
-                        <TextBlock Text="Las contraseñas viven solo en memoria mientras el worker corre." Foreground="{StaticResource Suave}" FontSize="11.5" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                        <Separator Margin="0,16,0,6" Background="#D8DED2"/>
+                        <TextBlock Text="Arranque" FontSize="15" FontWeight="Bold" Margin="0,6,0,0"/>
+                        <CheckBox x:Name="CheckInicioWindows"><TextBlock TextWrapping="Wrap" Text="Abrir y arrancar el worker al iniciar sesión este usuario; si se cae, se reinicia solo"/></CheckBox>
+                        <TextBlock Text="Las contraseñas no se muestran ni se escriben en la bitácora. La del certificado solo se guarda si lo marca arriba." Foreground="{StaticResource Suave}" FontSize="11.5" Margin="0,10,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
             </ScrollViewer>
@@ -116,6 +122,8 @@
             <Button x:Name="BotonDetener" Content="Detener" Style="{StaticResource BotonSuave}" Margin="10,0,0,0" IsEnabled="False" Click="Detener_Click"/>
             <Button x:Name="BotonPanel" Content="Abrir panel del worker" Style="{StaticResource BotonSuave}" Margin="10,0,0,0" IsEnabled="False" Click="Panel_Click"/>
             <Button x:Name="BotonAsistente" Content="Asistente de configuración" Style="{StaticResource BotonSuave}" Margin="10,0,0,0" Click="Asistente_Click"/>
+            <Button x:Name="BotonServicio" Content="Instalar servicio de Windows" Style="{StaticResource BotonSuave}" Margin="10,0,0,0" Click="InstalarServicio_Click"/>
+            <Button x:Name="BotonQuitarServicio" Content="Quitar servicio" Style="{StaticResource BotonSuave}" Margin="10,0,0,0" Visibility="Collapsed" Click="QuitarServicio_Click"/>
             <TextBlock x:Name="TextoRuta" Foreground="{StaticResource Suave}" FontSize="11.5" VerticalAlignment="Center" Margin="18,0,0,0"/>
         </StackPanel>
     </Grid>

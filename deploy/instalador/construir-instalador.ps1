@@ -19,9 +19,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la publicación del worker' }
 Copy-Item (Join-Path $pubDesktop 'Acusa.Worker.Desktop.exe') $trabajo
 Copy-Item (Join-Path $pubWorker 'Acusa.Sdk.Worker.exe') $trabajo
 Copy-Item (Join-Path $v1 'src\Acusa.Sdk.Worker\appsettings.json') $trabajo
-Copy-Item (Join-Path $PSScriptRoot 'acusa.ico'), (Join-Path $PSScriptRoot 'instalar.ps1'), (Join-Path $PSScriptRoot 'instalar.cmd') $trabajo
+Copy-Item (Join-Path $PSScriptRoot 'acusa.ico'), (Join-Path $PSScriptRoot 'instalar.ps1'), (Join-Path $PSScriptRoot 'instalar.cmd'), (Join-Path $PSScriptRoot 'servicio.ps1') $trabajo
 
-$archivos = 'Acusa.Worker.Desktop.exe', 'Acusa.Sdk.Worker.exe', 'appsettings.json', 'acusa.ico', 'instalar.ps1', 'instalar.cmd'
+$archivos = 'Acusa.Worker.Desktop.exe', 'Acusa.Sdk.Worker.exe', 'appsettings.json', 'acusa.ico', 'instalar.ps1', 'instalar.cmd', 'servicio.ps1'
 foreach ($a in $archivos) { if (-not (Test-Path (Join-Path $trabajo $a))) { throw "Falta $a" } }
 
 $destinoExe = Join-Path $Salida 'AcusaWorker-Setup.exe'

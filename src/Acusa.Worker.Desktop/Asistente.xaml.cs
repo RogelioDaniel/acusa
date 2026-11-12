@@ -363,6 +363,7 @@ public partial class Asistente : Window
             _cfg.Empresas = sel;
             _cfg.Empresa = _empresas.First(x => x.Principal.IsChecked == true && x.Marca.IsChecked == true).Carpeta;
             _cfg.Configurado = true;
+            if (string.IsNullOrEmpty(_cfg.PropietarioSid)) { _cfg.PropietarioSid = Acceso.SidActual; _cfg.PropietarioNombre = Acceso.NombreActual; }
             _cfg.Guardar();
             _instalado = true;
             _resultado.Text =

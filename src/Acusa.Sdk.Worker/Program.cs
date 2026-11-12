@@ -20,8 +20,27 @@ using Microsoft.Extensions.Options;
 // Trae un panel local (Estado, Configuración y Bitácora) en http://127.0.0.1:5095, protegido con un código local.
 // Configuración, de menor a mayor prioridad: appsettings.json, configuracion.json (la guarda el panel) y variables de
 // entorno (Orquestador__*, Contpaqi__*). Con --simulado usa datos en memoria para probar sin CONTPAQi.
+// Un solo worker por servidor, sin importar el usuario o la sesión de Windows: el SDK de CONTPAQi admite un solo proceso.
+System.Threading.Mutex? candadoUnico = null;
+if (!args.Contains("--simulado", StringComparer.OrdinalIgnoreCase))
+{
+    var libre = false;
+    try { candadoUnico = new System.Threading.Mutex(true, @"Global\Acusa.Sdk.Worker.Unico", out libre); }
+    catch (UnauthorizedAccessException) { /* lo creó otra cuenta: ya hay uno corriendo */ }
+    if (!libre)
+    {
+        Console.Error.WriteLine("Ya hay un Acusa Worker en ejecución en este servidor. Este proceso no se inicia.");
+        Environment.Exit(1);
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile(DatosLocales.RutaConfig, optional: true, reloadOnChange: false);
+// Como servicio de Windows no hay sesión de usuario ni variables de entorno: la configuración sale de C:\ProgramData\Acusa.
+if (args.Contains("--servicio", StringComparer.OrdinalIgnoreCase) || Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
+{
+    Console.WriteLine(ConfiguracionServicio.Aplicar(builder.Configuration) ?? @"Sin configuración en C:\ProgramData\Acusa: el worker espera a que un administrador lo configure.");
+}
 builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddWindowsService(o => o.ServiceName = "AcusaWorker");
 

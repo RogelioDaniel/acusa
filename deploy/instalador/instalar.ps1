@@ -1,4 +1,4 @@
-# Instala Acusa Worker en C:\Program Files\Acusa Worker, crea accesos directos y registra el desinstalador.
+﻿# Instala Acusa Worker en C:\Program Files\Acusa Worker, crea accesos directos y registra el desinstalador.
 # Solo copia archivos de Acusa: no toca CONTPAQi, Montek ni ninguna otra aplicación.
 param([switch]$Desinstalar)
 $ErrorActionPreference = 'Stop'
@@ -15,6 +15,7 @@ function Nuevo-Acceso($ruta, $exe) {
 }
 
 if ($Desinstalar) {
+    if (Get-Service AcusaWorker -ErrorAction SilentlyContinue) { sc.exe stop AcusaWorker | Out-Null; Start-Sleep 3; sc.exe delete AcusaWorker | Out-Null }
     Get-Process -Name 'Acusa.Worker.Desktop', 'Acusa.Sdk.Worker' -ErrorAction SilentlyContinue | Stop-Process -Force
     Remove-Item $inicio -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $escritorio -Force -ErrorAction SilentlyContinue
@@ -26,11 +27,15 @@ if ($Desinstalar) {
 
 $origen = $PSScriptRoot
 $yaInstalado = Test-Path (Join-Path $destino 'Acusa.Worker.Desktop.exe')
+# Si el servicio está instalado se detiene para reemplazar el archivo y se vuelve a iniciar al terminar.
+$servicioActivo = (Get-Service AcusaWorker -ErrorAction SilentlyContinue).Status -eq 'Running'
+if (Get-Service AcusaWorker -ErrorAction SilentlyContinue) { Stop-Service AcusaWorker -Force; Start-Sleep 2 }
 Get-Process -Name 'Acusa.Worker.Desktop', 'Acusa.Sdk.Worker' -ErrorAction SilentlyContinue | Stop-Process -Force
 New-Item -ItemType Directory -Force $destino | Out-Null
-foreach ($f in 'Acusa.Worker.Desktop.exe', 'Acusa.Sdk.Worker.exe', 'appsettings.json', 'acusa.ico', 'instalar.ps1') {
+foreach ($f in 'Acusa.Worker.Desktop.exe', 'Acusa.Sdk.Worker.exe', 'appsettings.json', 'acusa.ico', 'instalar.ps1', 'servicio.ps1') {
     Copy-Item (Join-Path $origen $f) $destino -Force
 }
+if ($servicioActivo) { Start-Service AcusaWorker }
 New-Item -ItemType Directory -Force $inicio | Out-Null
 Nuevo-Acceso (Join-Path $inicio 'Acusa Worker.lnk') (Join-Path $destino 'Acusa.Worker.Desktop.exe')
 Nuevo-Acceso $escritorio (Join-Path $destino 'Acusa.Worker.Desktop.exe')
