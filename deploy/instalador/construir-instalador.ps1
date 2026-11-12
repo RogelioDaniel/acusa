@@ -66,7 +66,7 @@ $lista
 $rutaSed = Join-Path $trabajo 'acusa.sed'
 [System.IO.File]::WriteAllText($rutaSed, $sed, [System.Text.Encoding]::GetEncoding(1252))
 & "$env:WINDIR\System32\iexpress.exe" /N /Q $rutaSed | Out-Null
-for ($i = 0; $i -lt 120 -and -not (Test-Path $destinoExe); $i++) { Start-Sleep -Seconds 1 }
+for ($i = 0; $i -lt 900 -and -not (Test-Path $destinoExe); $i++) { Start-Sleep -Seconds 1 }
 if (-not (Test-Path $destinoExe)) { throw 'IExpress no generó el instalador' }
 Start-Sleep -Seconds 3
 Write-Output ("Instalador: {0} ({1:N1} MB)" -f $destinoExe, ((Get-Item $destinoExe).Length / 1MB))
