@@ -1,0 +1,156 @@
+openapi: 3.0.1
+info:
+  title: Acusa Central
+  version: 1.0.0
+  description: |
+    Reemplazo de Nexus. El sistema de facturación manda cada orden (`tipoProceso`, `empresa` o `dbName`, `payload`) a Acusa Central,
+    un Acusa Worker la ejecuta en CONTPAQi Comercial y el resultado vuelve en la misma respuesta.
+
+    1. `POST /api/auth/token` con la llave de API de tipo Sistema (cabecera `x-api-key`) devuelve un token de una hora.
+    2. `POST /api/sdk/execute?esperar=60` con `Authorization: Bearer <token>` manda la orden y espera el resultado
+       (200 completada, 422 fallida, 202 si pasan los 60 s y la tarea sigue). Con `Idempotency-Key` repetir la orden no la duplica.
+    3. Solo si se recibió 202: `GET /api/sdk/tasks/{tareaId}`.
+
+    Use nombres que empiecen con PRUEBA en empresas de prueba.
+servers:
+- url: /
+  description: Este servidor
+tags:
+- name: Autenticación
+- name: Órdenes
+- name: Consulta
+paths:
+  /api/auth/token:
+    post:
+      tags: [Autenticación]
+      summary: Obtener un token (dura una hora)
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        schema: { type: string }
+        description: Llave de API de tipo Sistema, creada en el portal (Llaves de API).
+      responses:
+        '200':
+          description: Token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiraEnSegundos: { type: integer }
+        '401': { description: Llave inválida o revocada. }
+  /api/sdk/execute:
+    post:
+      tags: [Órdenes]
+      summary: Mandar una orden y recibir el resultado
+      security: [ { bearerAuth: [] } ]
+      parameters:
+      - name: esperar
+        in: query
+        required: false
+        schema: { type: integer, minimum: 0, maximum: 60, example: 60 }
+        description: Segundos que la respuesta espera el resultado. Sin este parámetro responde 202 con el identificador de la tarea.
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema: { type: string }
+        description: Llave única de la orden. Repetirla devuelve la misma tarea (cabecera `Idempotency-Replayed - true`) y no crea otro documento. Con otra orden distinta responde 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tipoProceso, payload]
+              properties:
+                tipoProceso:
+                  type: string
+                  enum: [cliente.crear, cliente.leer, cliente.actualizar, producto.crear, producto.leer, documento.crear, documento.emitir, documento.obtener-archivo, documento.cancelar]
+                empresa:
+                  type: string
+                  description: Carpeta de la empresa en CONTPAQi. También se acepta con el nombre `dbName`.
+                dbName:
+                  type: string
+                payload:
+                  type: object
+                  description: Datos de la operación; ver los ejemplos.
+            examples:
+              clienteCrear:
+                summary: cliente.crear
+                value: { tipoProceso: cliente.crear, dbName: adEMPRESA_DE_PRUEBA, payload: { codigo: PRUEBACL001, razonSocial: PRUEBA CLIENTE SA, rfc: XAXX010101000, tipoCliente: 1, limiteCredito: 50000 } }
+              clienteActualizar:
+                summary: cliente.actualizar (régimen fiscal y uso de CFDI para poder timbrar)
+                value: { tipoProceso: cliente.actualizar, dbName: adEMPRESA_DE_PRUEBA, payload: { codigo: PRUEBACL001, limiteCredito: 80000, email: facturacion@prueba.local, regimenFiscal: '616', usoCfdi: S01 } }
+              clienteLeer:
+                summary: cliente.leer
+                value: { tipoProceso: cliente.leer, dbName: adEMPRESA_DE_PRUEBA, payload: { codigo: PRUEBACL001 } }
+              productoCrear:
+                summary: producto.crear
+                value: { tipoProceso: producto.crear, dbName: adEMPRESA_DE_PRUEBA, payload: { codigo: PRUEBAPR001, nombre: PRUEBA SERVICIO, unidadBase: Pieza, precio1: 2000, claveSat: '81112200', tipoProducto: 3, textosExtra: [Renta de servidor] } }
+              productoLeer:
+                summary: producto.leer
+                value: { tipoProceso: producto.leer, dbName: adEMPRESA_DE_PRUEBA, payload: { codigo: PRUEBAPR001 } }
+              documentoCrear:
+                summary: documento.crear (devuelve concepto, serie y folio)
+                value: { tipoProceso: documento.crear, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, clienteCodigo: PRUEBACL001, referencia: PRUEBAFAC001, fecha: '2026-11-11', formaPago: '03', movimientos: [ { productoCodigo: PRUEBAPR001, unidades: 2, precio: 2000, ivaPorcentaje: 16, almacen: '1' } ] } }
+              documentoEmitir:
+                summary: documento.emitir (timbra; la contraseña del certificado vive en el worker)
+                value: { tipoProceso: documento.emitir, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, folio: 1 } }
+              documentoObtenerArchivo:
+                summary: documento.obtener-archivo (XML y PDF de un documento timbrado)
+                value: { tipoProceso: documento.obtener-archivo, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, folio: 1, formato: ambos, incluirContenido: true } }
+              documentoCancelar:
+                summary: documento.cancelar (motivo 01 a 04; el 01 pide uuidSustituto)
+                value: { tipoProceso: documento.cancelar, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, folio: 1, motivo: '02' } }
+      responses:
+        '200': { description: 'La orden terminó. Trae tareaId, estado "Completada" y resultado.' }
+        '202': { description: 'Sigue en curso; consultar la tarea con GET /api/sdk/tasks/{tareaId}.' }
+        '400': { description: Operación no disponible o datos inválidos. }
+        '401': { description: Token ausente o vencido. }
+        '409': { description: La llave de idempotencia ya se usó con otra orden. }
+        '422': { description: 'La operación falló en Comercial. Trae error con el detalle.' }
+  /api/sdk/tasks/{tareaId}:
+    get:
+      tags: [Consulta]
+      summary: Consultar una tarea
+      security: [ { bearerAuth: [] } ]
+      parameters:
+      - { name: tareaId, in: path, required: true, schema: { type: string } }
+      - name: esperar
+        in: query
+        required: false
+        schema: { type: integer, minimum: 0, maximum: 120 }
+        description: Segundos que la respuesta espera a que la tarea termine. Sirve para recuperar el resultado de una orden cuya respuesta se perdió, sin volver a mandarla.
+      responses:
+        '200': { description: Estado y resultado de la tarea. }
+        '404': { description: No existe. }
+  /api/sdk/tasks:
+    get:
+      tags: [Consulta]
+      summary: Listar tareas
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200': { description: Lista de tareas. }
+  /api/sdk/workers:
+    get:
+      tags: [Consulta]
+      summary: Listar workers y si están en línea
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200': { description: Lista de workers. }
+  /api/sdk/status:
+    get:
+      tags: [Consulta]
+      summary: Estado general (workers en línea, tareas por estado)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200': { description: Resumen. }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de POST /api/auth/token.
