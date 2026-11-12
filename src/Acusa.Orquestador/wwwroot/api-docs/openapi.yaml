@@ -94,7 +94,7 @@ paths:
                 value: { tipoProceso: producto.leer, dbName: adEMPRESA_DE_PRUEBA, payload: { codigo: PRUEBAPR001 } }
               documentoCrear:
                 summary: documento.crear (devuelve concepto, serie y folio)
-                value: { tipoProceso: documento.crear, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, clienteCodigo: PRUEBACL001, referencia: PRUEBAFAC001, fecha: '2026-11-11', formaPago: '03', partidas: [ { productoCodigo: PRUEBAPR001, unidades: 2, precio: 2000, ivaPorcentaje: 16, almacen: '1' } ] } }
+                value: { tipoProceso: documento.crear, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, clienteCodigo: PRUEBACL001, referencia: PRUEBAFAC001, fecha: '2026-11-11', formaPago: '03', movimientos: [ { productoCodigo: PRUEBAPR001, unidades: 2, precio: 2000, ivaPorcentaje: 16, almacen: '1' } ] } }
               documentoEmitir:
                 summary: documento.emitir (timbra; la contraseña del certificado vive en el worker)
                 value: { tipoProceso: documento.emitir, dbName: adEMPRESA_DE_PRUEBA, payload: { concepto: '5', serie: PRUEBA, folio: 1 } }

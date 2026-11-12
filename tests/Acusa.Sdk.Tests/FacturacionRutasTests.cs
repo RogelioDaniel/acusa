@@ -298,7 +298,8 @@ public sealed class FacturacionRutasTests : IDisposable
         var r = await _s.TimbrarAsync(_c, e, f, default);
 
         Assert.Equal(200, r.Status);
-        Assert.Equal(["cliente.actualizar", "documento.crear", "documento.emitir"], _ejecutor.Tipos.ToArray());
+        // Tras timbrar, Acusa pide el XML para devolverlo en texto plano en el campo `xml`.
+        Assert.Equal(["cliente.actualizar", "documento.crear", "documento.emitir", "documento.obtener-archivo"], _ejecutor.Tipos.ToArray());
         Assert.Equal("AAAAAAAA-0000-4000-8000-000000000001", Texto(r.Body, "uuid"));
         Assert.Equal("stamped", Texto(r.Body, "sat_status"));
 

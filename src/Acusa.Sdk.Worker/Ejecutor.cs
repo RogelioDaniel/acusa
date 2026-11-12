@@ -103,7 +103,8 @@ public sealed class Ejecutor(ClienteService clientes, ProductoService productos,
     private async Task<ResultadoTarea> CrearDocumentoAsync(JsonElement p, CancellationToken ct)
     {
         var partidas = new List<NuevaPartida>();
-        if (p.TryGetProperty("partidas", out var lista) && lista.ValueKind == JsonValueKind.Array)
+        // «movimientos» es el nombre vigente; «partidas» se sigue aceptando por compatibilidad.
+        if ((p.TryGetProperty("movimientos", out var lista) || p.TryGetProperty("partidas", out lista)) && lista.ValueKind == JsonValueKind.Array)
         {
             foreach (var x in lista.EnumerateArray())
             {

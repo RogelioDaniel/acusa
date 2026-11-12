@@ -1,7 +1,7 @@
 <Window x:Class="Acusa.Worker.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Acusa Worker" Width="980" Height="640" MinWidth="860" MinHeight="540"
+        Icon="acusa.ico" Title="Acusa Worker" Width="980" Height="640" MinWidth="860" MinHeight="540"
         WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" Foreground="{StaticResource Tinta}">
     <Window.Background><SolidColorBrush Color="#F2F4EE"/></Window.Background>
 

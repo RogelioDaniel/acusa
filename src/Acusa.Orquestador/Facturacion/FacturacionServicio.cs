@@ -691,7 +691,31 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         var uuid = emitir.Datos is { } de && de.TryGetProperty("uuid", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
         f["uuid"] = uuid; f["sat_status"] = "stamped"; f["error_message"] = null;
         store.Actualizar(Factura, clienteId, id, f);
-        return new(200, new { message = "Invoice stamped", id, folio = Txt(f["folio"]), uuid, sat_status = "stamped" });
+
+        // El XML timbrado va en texto plano en su propio campo (`xml`). Si Comercial no lo entrega a tiempo, el timbrado sigue
+        // siendo válido y el XML se obtiene después con GET .../xml.
+        string? xmlPlano = null;
+        try
+        {
+            var arch = await ArchivoAsync(clienteId, emisoraId, id, "xml", ct);
+            if (arch.Status == 200 && arch.Body is not null)
+            {
+                var b64 = arch.Body.GetType().GetProperty("content_base64")?.GetValue(arch.Body) as string;
+                xmlPlano = DecodificarXml(b64);
+            }
+        }
+        catch (Exception) { /* el XML se puede pedir después */ }
+
+        return new(200, new { message = "Invoice stamped", id, folio = Txt(f["folio"]), uuid, sat_status = "stamped", xml = xmlPlano });
+    }
+
+    /// <summary>Convierte el contenido base64 del XML a texto, quitando la marca de orden de bytes si la trae.</summary>
+    internal static string? DecodificarXml(string? base64)
+    {
+        if (string.IsNullOrEmpty(base64)) return null;
+        var bytes = Convert.FromBase64String(base64);
+        var texto = System.Text.Encoding.UTF8.GetString(bytes);
+        return texto.TrimStart('﻿');
     }
 
     public async Task<Resp> TimbrarLoteAsync(string clienteId, JsonNode? cuerpo, CancellationToken ct)
@@ -764,7 +788,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         if (archivo.ValueKind != JsonValueKind.Object) return Error(422, $"CONTPAQi did not deliver the {formato.ToUpperInvariant()} file");
         var contenido = archivo.TryGetProperty("base64", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
         if (contenido is null) return Error(422, "The file is larger than the size Acusa returns inline");
-        return new(200, new { id, format = formato, uuid = Txt(f["uuid"]), file_name = $"{Txt(f["series"])}{Txt(f["folio"])}.{formato}", content_base64 = contenido });
+        return new(200, new { id, format = formato, uuid = Txt(f["uuid"]), file_name = $"{Txt(f["series"])}{Txt(f["folio"])}.{formato}", content_base64 = contenido, xml = formato.Equals("xml", StringComparison.OrdinalIgnoreCase) ? DecodificarXml(contenido) : null });
     }
 
     // ---- Partidas ---------------------------------------------------------------------------------------------------

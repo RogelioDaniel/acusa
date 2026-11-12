@@ -11,7 +11,18 @@
     <AssemblyName>Acusa.Worker.Desktop</AssemblyName>
     <ApplicationTitle>Acusa Worker</ApplicationTitle>
     <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>Acusa Worker</Product>
+    <Company>Local Solutions IT</Company>
+    <Description>Acusa Worker: ejecuta en CONTPAQi Comercial las órdenes de Acusa Central.</Description>
+    <Copyright>Local Solutions IT</Copyright>
+    <ApplicationIcon>acusa.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="acusa.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.7" />

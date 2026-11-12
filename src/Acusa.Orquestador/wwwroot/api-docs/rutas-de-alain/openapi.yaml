@@ -2043,7 +2043,7 @@ paths:
       - bearerAuth: []
       responses:
         '200':
-          description: Timbrado de factura en proceso
+          description: Factura timbrada. Trae el UUID y el XML timbrado en texto plano (campo `xml`); también se obtiene con GET .../xml.
           content:
             application/json:
               schema:
@@ -2051,7 +2051,16 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: Stamping invoice in progress
+                    example: Invoice stamped
+                  uuid:
+                    type: string
+                  sat_status:
+                    type: string
+                    example: stamped
+                  xml:
+                    type: string
+                    nullable: true
+                    description: XML del CFDI timbrado en texto plano. Es null si Comercial no lo entregó a tiempo; en ese caso se pide con GET .../xml.
         '422':
           description: La factura ya fue timbrada
           content:
