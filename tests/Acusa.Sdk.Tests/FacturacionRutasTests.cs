@@ -49,7 +49,7 @@ public sealed class FacturacionRutasTests : IDisposable
     {
         _almacen = new Almacen(_ruta);
         _store = new DocStore(_ruta);
-        _s = new FacturacionServicio(_store, _almacen, _ejecutor, new Opciones());
+        _s = new FacturacionServicio(_store, _almacen, _ejecutor, new Opciones { FacturacionPrefijoCliente = "PRUEBACS", FacturacionPrefijoProducto = "PRUEBAPR", FacturacionPrefijoReferencia = "PRUEBAFAC" });
         _c = _almacen.CrearCliente("Cliente de prueba");
     }
 

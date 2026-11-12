@@ -43,7 +43,7 @@ public partial class Asistente : Window
     private readonly TextBlock _estadoSql = new(), _estadoSdk = new(), _estadoEmpresas = new(), _resumen = new(), _resultado = new(), _equipo = new();
     private readonly StackPanel _listaEmpresas = new();
     private readonly CheckBox _detComercial = new(), _detNominas = new(), _detConta = new();
-    private readonly List<(CheckBox Marca, RadioButton Principal, string Carpeta)> _empresas = new();
+    private readonly List<(CheckBox Marca, RadioButton Principal, string Carpeta, CheckBox Real)> _empresas = new();
 
     public Asistente(Config cfg)
     {
@@ -153,7 +153,7 @@ public partial class Asistente : Window
         p8.Children.Add(new TextBlock { Text = @"Selecciona las empresas a configurar desde C:\Compac\Empresas", Foreground = (Brush)FindResource("Suave"), Margin = new Thickness(0, 4, 0, 14) });
         p8.Children.Add(barra); _estadoEmpresas.HorizontalAlignment = HorizontalAlignment.Right; _estadoEmpresas.Foreground = (Brush)FindResource("Suave"); _estadoEmpresas.FontSize = 12; _estadoEmpresas.Margin = new Thickness(0, 0, 0, 6);
         p8.Children.Add(_estadoEmpresas); p8.Children.Add(caja);
-        p8.Children.Add(Nota("Nota: marque una empresa como «Principal»: es la que atiende este worker. Las demás se registran en Acusa Central. Para operar otra, cámbiela en la configuración."));
+        p8.Children.Add(Nota("Marque las empresas que atenderá este worker. «Producción» = empresa real: admite escritura (crear y timbrar) sin exigir el prefijo PRUEBA. Sin esa marca la empresa es de consulta (salvo las de pruebas, con PRUEBA en el nombre). «Principal» es la que se abre primero."));
         _paginas.Add(p8);
 
         // 9 Revisión
@@ -304,12 +304,15 @@ public partial class Asistente : Window
             fila.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             fila.ColumnDefinitions.Add(new ColumnDefinition());
             fila.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            fila.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             fila.Children.Add(marca);
             var texto = new TextBlock { Text = carpeta, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 12.5 };
             Grid.SetColumn(texto, 1); fila.Children.Add(texto);
-            Grid.SetColumn(radio, 2); fila.Children.Add(radio);
+            var real = new CheckBox { Content = "Producción", IsChecked = _cfg.EmpresasReales.Contains(carpeta, StringComparer.OrdinalIgnoreCase), FontSize = 12, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "Empresa real: admite escritura y no exige el prefijo PRUEBA." };
+            Grid.SetColumn(real, 2); fila.Children.Add(real);
+            Grid.SetColumn(radio, 3); fila.Children.Add(radio);
             _listaEmpresas.Children.Add(fila);
-            _empresas.Add((marca, radio, carpeta));
+            _empresas.Add((marca, radio, carpeta, real));
         }
 
         ActualizarContador();
@@ -361,6 +364,7 @@ public partial class Asistente : Window
 
             Secretos.GuardarLlave(llave);
             _cfg.Empresas = sel;
+            _cfg.EmpresasReales = _empresas.Where(x => x.Marca.IsChecked == true && x.Real.IsChecked == true).Select(x => x.Carpeta).ToList();
             _cfg.Empresa = _empresas.First(x => x.Principal.IsChecked == true && x.Marca.IsChecked == true).Carpeta;
             _cfg.Configurado = true;
             if (string.IsNullOrEmpty(_cfg.PropietarioSid)) { _cfg.PropietarioSid = Acceso.SidActual; _cfg.PropietarioNombre = Acceso.NombreActual; }

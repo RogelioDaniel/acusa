@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -50,9 +50,12 @@ internal static class ConfiguracionServicio
             v["Contpaqi:NombrePaq"] = Texto(c, "NombrePaq");
             v["Contpaqi:RutaSdk"] = Texto(c, "RutaSdk");
             v["Contpaqi:PermitirEscritura"] = "true";
-            v["Contpaqi:EmpresasEscritura:0"] = empresa;
-            var k = 1;
-            foreach (var x in otras.Where(x => x.Contains("PRUEBA", StringComparison.OrdinalIgnoreCase))) v[$"Contpaqi:EmpresasEscritura:{k++}"] = x;
+            // Escritura: las empresas «Producción» (reales, sin prefijo PRUEBA) y las de pruebas; el resto es de consulta.
+            var atendidas = new[] { empresa }.Concat(otras).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var reales = Lista(c, "EmpresasReales").Where(x => atendidas.Contains(x, StringComparer.OrdinalIgnoreCase)).ToList();
+            var escribibles = atendidas.Where(x => reales.Contains(x, StringComparer.OrdinalIgnoreCase) || x.Contains("PRUEBA", StringComparison.OrdinalIgnoreCase)).ToList();
+            for (var j = 0; j < escribibles.Count; j++) v[$"Contpaqi:EmpresasEscritura:{j}"] = escribibles[j];
+            for (var j = 0; j < reales.Count; j++) v[$"Contpaqi:EmpresasReales:{j}"] = reales[j];
 
             var timbrado = Bool(c, "Timbrado");
             if (Bool(c, "Documentos") || timbrado) v["Contpaqi:PermitirDocumentos"] = "true";

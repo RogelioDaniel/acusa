@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -301,7 +301,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!simulado && CheckTimbrado.IsChecked == true && !EsEmpresaDePrueba(empresa))
+        if (!simulado && CheckTimbrado.IsChecked == true && _config.EmpresasReales.Count > 0)
         {
             var r = MessageBox.Show($"La empresa '{empresa}' no parece de pruebas.\n\nTimbrar y cancelar gasta timbres reales y avisa al SAT. ¿Continuar?",
                 "Acusa Worker: empresa de producción", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
@@ -334,11 +334,12 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(_config.NombrePaq)) psi.Environment["Contpaqi__NombrePaq"] = _config.NombrePaq;
             if (!string.IsNullOrWhiteSpace(_config.RutaSdk)) psi.Environment["Contpaqi__RutaSdk"] = _config.RutaSdk;
             psi.Environment["Contpaqi__PermitirEscritura"] = "true";
-            // Escritura: la principal (como hasta ahora) y las demás solo si son de pruebas; el resto queda de consulta.
-            var otras = _config.Empresas.Where(x => !string.Equals(x, empresa, StringComparison.OrdinalIgnoreCase)).ToList();
-            psi.Environment["Contpaqi__EmpresasEscritura__0"] = empresa;
-            var k = 1;
-            foreach (var x in otras.Where(EsEmpresaDePrueba)) psi.Environment[$"Contpaqi__EmpresasEscritura__{k++}"] = x;
+            // Escritura: las empresas marcadas como «Producción» (reales, sin prefijo PRUEBA) y las de pruebas; el resto queda de consulta.
+            var atendidas = new[] { empresa }.Concat(_config.Empresas).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var reales = atendidas.Where(x => _config.EmpresasReales.Contains(x, StringComparer.OrdinalIgnoreCase)).ToList();
+            var escribibles = atendidas.Where(x => reales.Contains(x, StringComparer.OrdinalIgnoreCase) || EsEmpresaDePrueba(x)).ToList();
+            for (var k = 0; k < escribibles.Count; k++) psi.Environment[$"Contpaqi__EmpresasEscritura__{k}"] = escribibles[k];
+            for (var k = 0; k < reales.Count; k++) psi.Environment[$"Contpaqi__EmpresasReales__{k}"] = reales[k];
 
             if (CheckDocumentos.IsChecked == true || CheckTimbrado.IsChecked == true) psi.Environment["Contpaqi__PermitirDocumentos"] = "true";
             if (CheckTimbrado.IsChecked == true)

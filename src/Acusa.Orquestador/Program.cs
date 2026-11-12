@@ -564,13 +564,13 @@ public sealed class Opciones
     /// <summary>Empresa de CONTPAQi donde se crean clientes y productos cuando no se indica una emisora. Vacía: la primera registrada.</summary>
     public string FacturacionEmpresa { get; set; } = string.Empty;
 
-    /// <summary>Prefijos de los códigos que Acusa genera. Con empresas de prueba deben empezar con el prefijo de prueba del worker (PRUEBA).</summary>
-    public string FacturacionPrefijoCliente { get; set; } = "PRUEBACS";
+    /// <summary>Prefijos de los códigos que Acusa genera. En una empresa de pruebas deben empezar con PRUEBA (variables Orquestador__FacturacionPrefijoCliente, ...Producto y ...Referencia); en una empresa real, no.</summary>
+    public string FacturacionPrefijoCliente { get; set; } = "CS";
 
-    public string FacturacionPrefijoProducto { get; set; } = "PRUEBAPR";
+    public string FacturacionPrefijoProducto { get; set; } = "PR";
 
     /// <summary>Prefijo de la referencia con la que se crea cada documento (hasta 20 caracteres en total).</summary>
-    public string FacturacionPrefijoReferencia { get; set; } = "PRUEBAFAC";
+    public string FacturacionPrefijoReferencia { get; set; } = "FAC";
 
     /// <summary>
     /// Código de almacén de las partidas de los documentos que crean las rutas de facturación. El SDK real responde 120115

@@ -53,7 +53,7 @@
                         <PasswordBox x:Name="CajaLlave"/>
 
                         <TextBlock Style="{StaticResource Etiqueta}" Text="Empresa de CONTPAQi (carpeta)"/>
-                        <TextBox x:Name="CajaEmpresa" Text="adEMPRESA_DE_PRUEBA"/>
+                        <TextBox x:Name="CajaEmpresa"/>
 
                         <CheckBox x:Name="CheckSimulado"><TextBlock TextWrapping="Wrap" Text="Modo simulado (sin CONTPAQi, solo para probar el ciclo)"/></CheckBox>
 
