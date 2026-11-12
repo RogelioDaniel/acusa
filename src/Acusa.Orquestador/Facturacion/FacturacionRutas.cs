@@ -171,7 +171,11 @@ public static class FacturacionRutas
             return null;
         }
 
-        var identidad = seguridad.ValidarToken(cabecera[7..].Trim(), DateTimeOffset.UtcNow);
+        // Token de /api/auth/token o la llave de API (ak_…) directamente, como en el resto de Central.
+        var credencial = cabecera[7..].Trim();
+        var identidad = credencial.StartsWith("ak_", StringComparison.Ordinal)
+            ? almacen.BuscarLlave(credencial)
+            : seguridad.ValidarToken(credencial, DateTimeOffset.UtcNow);
         if (identidad is null || (identidad.Rol != Roles.Api && identidad.Rol != Roles.Portal))
         {
             return null;
