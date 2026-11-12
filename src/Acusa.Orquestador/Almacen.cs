@@ -38,7 +38,7 @@ public sealed class Almacen
         {
             "ALTER TABLE llaves ADD COLUMN nombre TEXT", "ALTER TABLE llaves ADD COLUMN prefijo TEXT", "ALTER TABLE llaves ADD COLUMN ultimo_uso TEXT",
             "ALTER TABLE workers ADD COLUMN version TEXT", "ALTER TABLE workers ADD COLUMN host TEXT",
-            "ALTER TABLE tareas ADD COLUMN llave TEXT", "ALTER TABLE tareas ADD COLUMN huella TEXT",
+            "ALTER TABLE tareas ADD COLUMN llave TEXT", "ALTER TABLE tareas ADD COLUMN huella TEXT", "ALTER TABLE tareas ADD COLUMN peticion TEXT",
         })
         {
             try
@@ -219,12 +219,12 @@ public sealed class Almacen
 
     // ---- Cola -----------------------------------------------------------------------------
 
-    public string EncolarTarea(string clienteId, string empresa, string tipo, string payload)
+    public string EncolarTarea(string clienteId, string empresa, string tipo, string payload, string? peticion = null)
     {
         var id = Guid.NewGuid().ToString("N");
         Ejecutar(
-            "INSERT INTO tareas (id, cliente_id, empresa, tipo, payload, estado, creada) VALUES ($id, $c, $e, $t, $p, 0, $ahora)",
-            ("$id", id), ("$c", clienteId), ("$e", empresa), ("$t", tipo), ("$p", payload), ("$ahora", Ahora()));
+            "INSERT INTO tareas (id, cliente_id, empresa, tipo, payload, estado, creada, peticion) VALUES ($id, $c, $e, $t, $p, 0, $ahora, $pe)",
+            ("$id", id), ("$c", clienteId), ("$e", empresa), ("$t", tipo), ("$p", payload), ("$ahora", Ahora()), ("$pe", (object?)peticion ?? DBNull.Value));
         return id;
     }
 
@@ -233,7 +233,7 @@ public sealed class Almacen
     /// devuelve la que ya existe (<see cref="ResultadoEncolar.Repetida"/>). Si la llave ya se usó con una orden distinta,
     /// devuelve el conflicto sin encolar nada. Así un reintento de la red o del sistema que llama no duplica una factura.
     /// </summary>
-    public ResultadoEncolar EncolarIdempotente(string clienteId, string empresa, string tipo, string payload, string llave)
+    public ResultadoEncolar EncolarIdempotente(string clienteId, string empresa, string tipo, string payload, string llave, string? peticion = null)
     {
         var huella = Huella(empresa, tipo, payload);
 
@@ -249,8 +249,8 @@ public sealed class Almacen
             try
             {
                 Ejecutar(
-                    "INSERT INTO tareas (id, cliente_id, empresa, tipo, payload, estado, creada, llave, huella) VALUES ($id, $c, $e, $t, $p, 0, $ahora, $l, $h)",
-                    ("$id", id), ("$c", clienteId), ("$e", empresa), ("$t", tipo), ("$p", payload), ("$ahora", Ahora()), ("$l", llave), ("$h", huella));
+                    "INSERT INTO tareas (id, cliente_id, empresa, tipo, payload, estado, creada, llave, huella, peticion) VALUES ($id, $c, $e, $t, $p, 0, $ahora, $l, $h, $pe)",
+                    ("$id", id), ("$c", clienteId), ("$e", empresa), ("$t", tipo), ("$p", payload), ("$ahora", Ahora()), ("$l", llave), ("$h", huella), ("$pe", (object?)peticion ?? DBNull.Value));
                 return new ResultadoEncolar(id, EstadoTarea.Pendiente, Repetida: false, Conflicto: false);
             }
             catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
@@ -403,7 +403,7 @@ public sealed class Almacen
     // ---- Utilidades -----------------------------------------------------------------------
 
     private const string SeleccionTarea =
-        "SELECT id, tipo, empresa, estado, intentos, creada, iniciada, terminada, resultado, error, codigo_sdk FROM tareas";
+        "SELECT id, tipo, empresa, estado, intentos, creada, iniciada, terminada, resultado, error, codigo_sdk, peticion FROM tareas";
 
     private static TareaDto LeerTarea(SqliteDataReader r) => new(
         r.GetString(0),
@@ -416,7 +416,8 @@ public sealed class Almacen
         r.IsDBNull(7) ? null : Fecha(r.GetString(7)),
         r.IsDBNull(8) ? null : JsonDocument.Parse(r.GetString(8)).RootElement.Clone(),
         r.IsDBNull(9) ? null : r.GetString(9),
-        r.IsDBNull(10) ? null : r.GetInt32(10));
+        r.IsDBNull(10) ? null : r.GetInt32(10),
+        r.IsDBNull(11) ? null : r.GetString(11));
 
     private static string Ahora() => DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 

@@ -33,7 +33,7 @@ public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opcio
         string id;
         if (!string.IsNullOrEmpty(llave))
         {
-            var r = almacen.EncolarIdempotente(clienteId, empresa, tipo, json, llave);
+            var r = almacen.EncolarIdempotente(clienteId, empresa, tipo, json, llave, PeticionActual.Texto);
             if (r.Conflicto)
             {
                 return new ResultadoOrden(false, null, "La orden cambió respecto a un intento anterior con la misma llave.", null, false, r.Id);
@@ -47,7 +47,7 @@ public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opcio
         }
         else
         {
-            id = almacen.EncolarTarea(clienteId, empresa, tipo, json);
+            id = almacen.EncolarTarea(clienteId, empresa, tipo, json, PeticionActual.Texto);
             notificador.TareaEncolada();
         }
 

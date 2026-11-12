@@ -123,6 +123,7 @@ public static class FacturacionRutas
                 return Results.Json(new { errors = new[] { "No authorization headers provided" } }, statusCode: 401);
             }
 
+            PeticionActual.Texto = $"{metodo} {http.Request.Path}";
             var (cuerpo, invalido) = await LeerCuerpoAsync(http, metodo);
             if (invalido)
             {

@@ -109,6 +109,7 @@ const RUTAS = [
   { id: "workers", titulo: "Workers", vista: vistaWorkers },
   { id: "tareas", titulo: "Tareas", vista: vistaTareas },
   { id: "llaves", titulo: "Llaves de API", vista: vistaLlaves },
+  { id: "probar", titulo: "Probar", vista: vistaProbar },
   { id: "devs", titulo: "Desarrolladores", vista: vistaDevs },
   { id: "config", titulo: "Configuración", vista: vistaConfig },
 ];
@@ -151,6 +152,9 @@ function encabezado(titulo, descripcion, ...acciones) {
     acciones.length ? h("div", { class: "fila-acciones" }, acciones) : null);
 }
 
+/** La petición REST que originó la tarea; las órdenes por /api/sdk/execute no traen ruta propia. La operación interna va como nota. */
+const peticionDe = (t) => h("span", null, t.peticion || "POST /api/sdk/execute", h("small", { class: "nota", style: "display:block" }, t.tipoProceso));
+
 const tabla = (cabeceras, filas) => h("div", { class: "tabla-caja" }, h("table", null,
   h("thead", null, h("tr", null, cabeceras.map((t) => h("th", null, t)))), h("tbody", null, filas)));
 
@@ -172,7 +176,7 @@ function vistaPanel(raiz) {
           dato("Tareas fallidas", r.fallidas, r.ultimaTarea ? `Última tarea ${hace(r.ultimaTarea)}` : "Sin tareas aún")),
         h("div", { class: "tarjeta" }, h("h2", null, "Últimas tareas"),
           tareas.length
-            ? tabla(["Hora", "Operación", "Empresa", "Estado"], tareas.map((t) => h("tr", null, h("td", { class: "mono" }, hora(t.creada)), h("td", { class: "mono" }, t.tipoProceso),
+            ? tabla(["Hora", "Petición", "Empresa", "Estado"], tareas.map((t) => h("tr", null, h("td", { class: "mono" }, hora(t.creada)), h("td", { class: "mono" }, peticionDe(t)),
                 h("td", { class: "mono" }, t.empresa), h("td", null, estadoFicha(t.estado)))))
             : h("div", { class: "vacio" }, h("b", null, "Todavía no hay tareas"), "Cuando llegue la primera orden aparecerá aquí.")));
     } catch (e) { falla(cuerpo)(e); }
@@ -209,16 +213,16 @@ function vistaTareas(raiz) {
   const estados = ["", "Pendiente", "EnProceso", "Completada", "Fallida"];
   const filtro = h("select", { "aria-label": "Filtrar por estado" }, estados.map((e) => h("option", { value: e }, e === "" ? "Todos los estados" : estadoTexto(e))));
   const lista = h("div", { class: "tarjeta" });
-  raiz.append(encabezado("Tareas", "Cada orden que llega por la API, con su resultado o su error.", h("label", { class: "campo" }, h("span", null, "Estado"), filtro)), lista);
+  raiz.append(encabezado("Tareas", "Cada petición que llega por la API, con su resultado o su error.", h("label", { class: "campo" }, h("span", null, "Estado"), filtro)), lista);
   const abiertas = new Set();
   async function cargar() {
     try {
       const ts = await api("/api/sdk/tasks?limite=100" + (filtro.value ? "&estado=" + filtro.value : ""));
       lista.replaceChildren(ts.length
-        ? tabla(["Hora", "Operación", "Empresa", "Estado", "Resultado"], ts.map((t) => {
+        ? tabla(["Hora", "Petición", "Empresa", "Estado", "Resultado"], ts.map((t) => {
             const detalle = t.error || (t.resultado ? json(t.resultado) : "");
             const abierta = abiertas.has(t.id);
-            return h("tr", null, h("td", { class: "mono" }, hora(t.creada)), h("td", { class: "mono" }, t.tipoProceso), h("td", { class: "mono" }, t.empresa),
+            return h("tr", null, h("td", { class: "mono" }, hora(t.creada)), h("td", { class: "mono" }, peticionDe(t)), h("td", { class: "mono" }, t.empresa),
               h("td", null, estadoFicha(t.estado)),
               h("td", null, detalle ? h("button", { class: "boton suave chico", onclick: () => { if (abiertas.has(t.id)) abiertas.delete(t.id); else abiertas.add(t.id); cargar(); } }, abierta ? "Ocultar" : "Ver") : "—",
                 abierta && detalle ? h("pre", null, detalle) : null));
@@ -281,31 +285,97 @@ function vistaDevs(raiz) {
   const catalogo = h("div");
   const bloque = (titulo, texto) => h("div", { style: "margin-top:10px" }, h("div", { class: "etiqueta" }, titulo), h("div", { class: "copiable" }, h("code", null, texto), h("button", { class: "boton suave chico", onclick: () => copiar(texto) }, "Copiar")));
   raiz.append(
-    encabezado("Desarrolladores", "Su sistema manda órdenes a Acusa Central; un Acusa Worker las ejecuta en CONTPAQi Comercial y devuelve el resultado. Con ?esperar=60 la misma respuesta trae el resultado; sin él, la API responde con un identificador de tarea y usted consulta su estado."),
+    encabezado("Desarrolladores", "Acusa Central es una API REST: cada recurso (compañías, productos, facturas, movimientos) tiene su ruta, con los mismos nombres de campo del sistema de facturación. Un Acusa Worker ejecuta cada petición en CONTPAQi Comercial."),
     h("div", { class: "tarjeta" }, h("h2", null, "Cómo se usa"),
-      bloque("1. Obtener un token (dura una hora)", `POST ${base}/api/auth/token   cabecera  x-api-key: <su llave>`),
-      bloque("2. Mandar una orden y recibir el resultado en la misma respuesta", `POST ${base}/api/sdk/execute?esperar=60   cabecera  Authorization: Bearer <token>   (opcional: Idempotency-Key: <llave única>)\n{ "tipoProceso": "...", "empresa": "...", "payload": { ... } }\n→ 200 { "tareaId", "estado": "Completada", "resultado": { ... } }    →  422 si falló, con "error"    →  202 si pasan los 60 s (la tarea sigue)`),
-      bloque("3. Solo si recibió 202: consultar la tarea", `GET ${base}/api/sdk/tasks/{tareaId}`),
-      h("p", { class: "nota", style: "margin-top:10px" }, "También: GET /api/sdk/tasks (lista), GET /api/sdk/workers y GET /api/sdk/status. La empresa también se acepta con el nombre dbName.")),
-    h("div", { class: "tarjeta" }, h("h2", null, "Flujo mínimo de timbrado"),
-      h("p", { class: "sub" }, "Seis pasos bastan para emitir una factura:"),
-      h("ol", { class: "pasos" },
-        h("li", null, h("b", null, "Token: "), "POST /api/auth/token."),
-        h("li", null, h("b", null, "cliente.crear "), "(o cliente.leer si ya existe)."),
-        h("li", null, h("b", null, "producto.crear "), "(o producto.leer si ya existe)."),
-        h("li", null, h("b", null, "documento.crear: "), "devuelve concepto, serie y folio."),
-        h("li", null, h("b", null, "documento.emitir: "), "timbra el documento con ese concepto, serie y folio."),
-        h("li", null, h("b", null, "documento.obtener-archivo: "), "entrega el XML y el PDF; con documento.cancelar se cancela ante el SAT.")),
-      h("p", { class: "nota" }, "Solo estas nueve operaciones están disponibles; cualquier otra responde 400. Use nombres que empiecen con PRUEBA en empresas de prueba.")),
+      h("p", { class: "sub" }, "Documentación interactiva y probador: ", h("a", { href: "/api-docs/", target: "_blank" }, "/api-docs"), "."),
+      bloque("1. Autenticarse", `Authorization: Bearer <llave de API ak_…>   (o un token de POST ${base}/api/auth/token con la cabecera x-api-key)`),
+      bloque("2. Crear una factura (borrador)", `POST ${base}/issuing_companies/{id}/invoices\n{ "invoice": { "concept": "5", "series": "PRUEBA", "invoice_date": "2026-11-12", "client_code": "…", "payment_method": "03", "cfdi": "S01", "tax_regime": "616",\n  "movements_attributes": [ { "product_code": "…", "quantity": 1, "price": 1, "vat_percentage": 16, "vat_retention_percentage": 0, "ieps_percentage": 0 } ] } }`),
+      bloque("3. Timbrar", `POST ${base}/issuing_companies/{id}/invoices/{invoice_id}/stamps\n→ 200 { "uuid", "sat_status": "stamped", "xml": "<cfdi:Comprobante …>" }   (el XML viene en texto plano)`),
+      bloque("4. Archivos y cancelación", `GET .../invoices/{invoice_id}/xml   ·   GET .../invoices/{invoice_id}/document   ·   POST .../invoices/{invoice_id}/cancelate { "cancellation": { "cancellation_reason": "02" } }`),
+      h("p", { class: "nota", style: "margin-top:10px" }, "Los errores de validación responden 422 con { \"errors\": [...] }. Use nombres que empiecen con PRUEBA en empresas de prueba. En la vista Probar de este portal puede correr toda la cadena con un botón.")),
+    h("div", { class: "tarjeta" }, h("h2", null, "API de órdenes (compatibilidad)"),
+      h("p", { class: "sub" }, "Los sistemas que ya usan POST /api/sdk/execute con tipoProceso siguen funcionando. Documentación en ", h("a", { href: "/api-docs/ordenes/", target: "_blank" }, "/api-docs/ordenes"), ".")),
     catalogo);
 
   Promise.all([api("/api/portal/operaciones"), api("/api/portal/empresas")]).then(([ops, empresas]) => {
     const empresa = empresas[0] || "adEMPRESA_DE_PRUEBA";
-    catalogo.replaceChildren(h("div", { class: "tarjeta" }, h("h2", null, "Operaciones disponibles"),
+    catalogo.replaceChildren(h("div", { class: "tarjeta" }, h("h2", null, "Operaciones de la API de órdenes"),
       tabla(["Operación", "Qué hace", "Ejemplo"], ops.map((o) => h("tr", null, h("td", { class: "mono" }, o.tipoProceso), h("td", null, o.descripcion),
         h("td", null, h("details", null, h("summary", null, "Ver"), h("pre", null, curl(base, o.tipoProceso, empresa, o.ejemplo)),
           h("button", { class: "boton suave chico", onclick: () => copiar(curl(base, o.tipoProceso, empresa, o.ejemplo)) }, "Copiar"))))))));
   }).catch(falla(catalogo));
+}
+
+// ---------------------------------------------------------------- probar (cadena de peticiones REST)
+
+function vistaProbar(raiz) {
+  const empresaSel = h("select", { "aria-label": "Empresa de pruebas" });
+  const cancelar = h("input", { type: "checkbox", id: "chk-cancelar" });
+  const salida = h("div", null, h("div", { class: "tarjeta" }, h("div", { class: "vacio" }, h("b", null, "Todavía no se ha corrido"), "Elija la empresa de pruebas y pulse «Correr la cadena».")));
+  const boton = h("button", { class: "boton", id: "boton-cadena" }, "Correr la cadena");
+  raiz.append(
+    encabezado("Probar", "Corre en cadena las peticiones REST de una factura de $1 y muestra cada respuesta, como una colección de Postman. Necesita un worker en línea y una empresa de pruebas; el timbrado gasta un timbre del PAC."),
+    h("div", { class: "tarjeta" },
+      h("div", { class: "fila-acciones" }, h("label", { class: "campo" }, h("span", null, "Empresa de pruebas"), empresaSel),
+        h("label", { class: "campo", for: "chk-cancelar", style: "flex-direction:row;gap:8px;align-items:center" }, cancelar, h("span", null, "Cancelar la factura al final (motivo 02)")), boton)),
+    salida);
+  api("/api/portal/empresas").then((es) => {
+    empresaSel.replaceChildren(...es.map((e) => h("option", { value: e }, e)));
+    const prueba = es.find((e) => /PRUEBA/i.test(e)); if (prueba) empresaSel.value = prueba;
+  }).catch(() => {});
+
+  async function llamar(metodo, ruta, cuerpo) {
+    const r = await fetch(ruta, { method: metodo, headers: { "Content-Type": "application/json", Authorization: "Bearer " + sesion.token }, body: cuerpo ? JSON.stringify(cuerpo) : undefined });
+    let datos = null; try { datos = await r.json(); } catch { /* sin cuerpo */ }
+    return { estado: r.status, datos };
+  }
+
+  boton.addEventListener("click", async () => {
+    const empresa = empresaSel.value;
+    if (!empresa) { aviso("Registre una empresa en Configuración."); return; }
+    if (!/PRUEBA/i.test(empresa) && !confirm(`La empresa «${empresa}» no parece de pruebas. Timbrar gasta timbres reales. ¿Continuar?`)) return;
+    boton.disabled = true;
+    salida.replaceChildren();
+    const ctx = {};
+    const hoy = new Date().toISOString().slice(0, 10);
+    const rf = () => `/issuing_companies/${ctx.emisora}/invoices/${ctx.factura}`;
+    const pasos = [
+      ["Empresa emisora", async () => {
+        const l = await llamar("GET", "/issuing_companies");
+        const ya = Array.isArray(l.datos) ? l.datos.find((x) => (x.database_name || "").toLowerCase() === empresa.toLowerCase()) : null;
+        if (ya) { ctx.emisora = ya.id; return { ...l, ruta: "GET /issuing_companies" }; }
+        const c = await llamar("POST", "/issuing_companies", { issuing_company: { social_reason: "PRUEBA EMISORA SA", rfc: "EKU9003173C9", database_name: empresa } });
+        ctx.emisora = c.datos && c.datos.id; return { ...c, ruta: "POST /issuing_companies" };
+      }],
+      ["Producto de $1", async () => { const r = await llamar("POST", "/products", { product: { name: "PRUEBA SERVICIO UN PESO", price: 1, description: "PRUEBA", unit_base: "Pieza", series_sat: "81112200", product_type: 3, issuing_company_id: ctx.emisora } }); ctx.producto = r.datos && r.datos.code; return { ...r, ruta: "POST /products" }; }],
+      ["Compañía (cliente)", async () => { const r = await llamar("POST", "/companies", { company: { social_reason: "PRUEBA CLIENTE SA", rfc: "XAXX010101000", client_type: 1, credit_limit: 1000 } }); ctx.cliente = r.datos && r.datos.code; return { ...r, ruta: "POST /companies" }; }],
+      ["Factura (borrador)", async () => {
+        const r = await llamar("POST", `/issuing_companies/${ctx.emisora}/invoices`, { invoice: { concept: "5", series: "PRUEBA", invoice_date: hoy, client_code: ctx.cliente, payment_method: "03", cfdi: "S01", tax_regime: "616", movements_attributes: [{ product_code: ctx.producto, quantity: 1, price: 1, vat_percentage: 16, vat_retention_percentage: 0, ieps_percentage: 0 }] } });
+        ctx.factura = r.datos && r.datos.id; return { ...r, ruta: `POST /issuing_companies/${ctx.emisora}/invoices` };
+      }],
+      ["Timbrar (devuelve el XML en texto plano)", async () => { const r = await llamar("POST", rf() + "/stamps"); return { ...r, ruta: "POST " + rf() + "/stamps" }; }],
+      ["XML de la factura", async () => { const r = await llamar("GET", rf() + "/xml"); return { ...r, ruta: "GET " + rf() + "/xml" }; }],
+    ];
+    if (cancelar.checked) pasos.push(["Cancelar (motivo 02)", async () => { const r = await llamar("POST", rf() + "/cancelate", { cancellation: { cancellation_reason: "02" } }); return { ...r, ruta: "POST " + rf() + "/cancelate" }; }]);
+
+    let fallo = false;
+    for (let i = 0; i < pasos.length && !fallo; i++) {
+      const [titulo, correr] = pasos[i];
+      const fila = h("div", { class: "tarjeta" }, h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "sub" }, "Corriendo…"));
+      salida.append(fila);
+      try {
+        const r = await correr();
+        const bien = r.estado >= 200 && r.estado < 300;
+        let texto = json(r.datos);
+        if (texto.length > 6000) texto = texto.slice(0, 6000) + "\n… (recortado)";
+        fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "mono" }, r.ruta, " → ", h("b", { class: bien ? "estado-Completada" : "estado-Fallida" }, r.estado)), h("pre", null, texto));
+        if (!bien) fallo = true;
+        else if (r.datos && r.datos.xml) fila.append(h("p", { class: "nota" }, "El campo xml llegó en texto plano (" + r.datos.xml.length + " caracteres)."));
+      } catch (e) { fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "estado-Fallida" }, "Error: " + e.message)); fallo = true; }
+    }
+    salida.append(h("div", { class: "tarjeta" }, h("b", null, fallo ? "La cadena se detuvo en el paso que falló." : "Cadena completa.")));
+    boton.disabled = false;
+  });
 }
 
 // ---------------------------------------------------------------- configuración

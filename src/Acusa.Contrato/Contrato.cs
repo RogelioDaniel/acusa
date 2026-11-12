@@ -90,7 +90,8 @@ public sealed record TareaDto(
     DateTime? Terminada,
     JsonElement? Resultado,
     string? Error,
-    int? CodigoSdk);
+    int? CodigoSdk,
+    string? Peticion = null);
 
 /// <summary>Cuerpo de <c>POST /api/worker/poll</c>.</summary>
 public sealed record SolicitudPoll(string WorkerId, string Empresa, string? Version = null, string? Host = null);
