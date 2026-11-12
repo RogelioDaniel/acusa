@@ -87,6 +87,13 @@ public sealed class Almacen
         return lista;
     }
 
+    /// <summary>Registra una llave cuyo valor ya se conoce (por ejemplo, la que viene de una variable de entorno). Guarda solo el hash.</summary>
+    public void CrearLlaveConocida(string clienteId, string rol, string llave, string? nombre = null) =>
+        Ejecutar(
+            "INSERT INTO llaves (id, cliente_id, rol, hash, creada, nombre, prefijo) VALUES ($id, $c, $r, $h, $t, $n, $p)",
+            ("$id", Guid.NewGuid().ToString("N")), ("$c", clienteId), ("$r", rol), ("$h", Seguridad.HashLlave(llave)), ("$t", Ahora()),
+            ("$n", string.IsNullOrWhiteSpace(nombre) ? null : nombre.Trim()), ("$p", llave[..7]));
+
     /// <summary>Guarda solo el hash. La llave en claro se entrega una vez y no se puede recuperar.</summary>
     public string CrearLlave(string clienteId, string rol, string? nombre = null)
     {

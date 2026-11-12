@@ -38,6 +38,17 @@ if (almacen.ContarUsuarios() == 0 && !string.IsNullOrWhiteSpace(config.CorreoIni
 {
     var cliente = almacen.CrearCliente(string.IsNullOrWhiteSpace(config.NombreClienteInicial) ? "Local Solutions IT" : config.NombreClienteInicial);
     almacen.CrearUsuario(cliente, config.CorreoInicial, config.NombreInicial, Contrasenas.Crear(config.ClaveInicial));
+
+    // Hosting sin disco (Render Free): cada despliegue empieza con la base vacía. Estas variables, todas opcionales, la dejan
+    // igual de lista que antes: empresas, llaves con el mismo valor y más usuarios del portal. Quedan en el panel del proveedor.
+    foreach (var e in config.EmpresasIniciales.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) almacen.AgregarEmpresa(cliente, e);
+    if (config.LlaveApiInicial.StartsWith("ak_") && config.LlaveApiInicial.Length >= 30) almacen.CrearLlaveConocida(cliente, Roles.Api, config.LlaveApiInicial, "Sistema de Alain");
+    if (config.LlaveWorkerInicial.StartsWith("wk_") && config.LlaveWorkerInicial.Length >= 30) almacen.CrearLlaveConocida(cliente, Roles.Worker, config.LlaveWorkerInicial, "Servidor CONTPAQi");
+    foreach (var u in config.UsuariosAdicionales.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        var p = u.Split('|', StringSplitOptions.TrimEntries); // correo|nombre|contraseña
+        if (p.Length == 3 && p[0].Contains('@') && p[2].Length >= 10 && almacen.BuscarUsuarioPorEmail(p[0]) is null) almacen.CrearUsuario(cliente, p[0], p[1], Contrasenas.Crear(p[2]));
+    }
 }
 
 var app = builder.Build();
@@ -521,6 +532,13 @@ public sealed class Opciones
 
     /// <summary>Contraseña inicial (mínimo 10 caracteres); va en variable de entorno, no en el repositorio.</summary>
     public string ClaveInicial { get; set; } = string.Empty;
+
+    /// <summary>Opcionales, solo para hosting sin disco: se aplican al crear la base vacía. Ver el primer arranque.</summary>
+    public string EmpresasIniciales { get; set; } = string.Empty;
+    public string LlaveApiInicial { get; set; } = string.Empty;
+    public string LlaveWorkerInicial { get; set; } = string.Empty;
+    /// <summary>Más usuarios del portal: <c>correo|nombre|contraseña;correo|nombre|contraseña</c>.</summary>
+    public string UsuariosAdicionales { get; set; } = string.Empty;
 
     public int TokenSegundos { get; set; } = 3600;
     public int WorkerEnLineaSegundos { get; set; } = 90;
