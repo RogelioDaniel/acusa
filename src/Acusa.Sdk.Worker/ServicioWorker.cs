@@ -148,7 +148,7 @@ public sealed class ServicioWorker(
                 {
                     // Con inicio por diálogo alguien debe escribir la clave en el equipo; mientras tanto no se toman tareas.
                     estado.Conexion("esperando-sdk", $"Sesión del SDK: {sesion.Estado.Estado}");
-                    log.LogInformation("Esperando la sesión del SDK (estado: {Estado}).", sesion.Estado.Estado);
+                    log.LogInformation("Esperando la sesión del SDK (estado: {Estado}). {Motivo}", sesion.Estado.Estado, sesion.Estado.Mensaje);
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
                     continue;
                 }

@@ -202,10 +202,10 @@ internal sealed class ClaveCertificadoProtegida(string? clave, bool claveEnComer
         Environment.GetEnvironmentVariable("ACUSA_CLAVE_CERTIFICADO") is { Length: > 0 } entorno ? entorno : clave;
 }
 
-/// <summary>Clave del SDK en memoria: la del panel (cifrada en disco) o la variable de entorno <c>ACUSA_CLAVE_SDK</c>.</summary>
+/// <summary>Clave del SDK en memoria: la del panel (cifrada en disco) o la variable de entorno <c>ACUSA_CLAVE_SDK</c>. Vacía si el usuario del SDK no tiene contraseña.</summary>
 internal sealed class ClaveProtegida(string? clave) : IProveedorClave
 {
     public string ObtenerClave() =>
         Environment.GetEnvironmentVariable("ACUSA_CLAVE_SDK") is { Length: > 0 } entorno ? entorno
-        : clave ?? throw new InvalidOperationException("Falta la clave del SDK: guárdela en el panel o defina ACUSA_CLAVE_SDK.");
+        : clave ?? string.Empty; // sin clave guardada: el usuario del SDK puede no tener contraseña (como SUPERVISOR en Montek)
 }

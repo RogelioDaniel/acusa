@@ -334,6 +334,8 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(_config.NombrePaq)) psi.Environment["Contpaqi__NombrePaq"] = _config.NombrePaq;
             if (!string.IsNullOrWhiteSpace(_config.RutaSdk)) psi.Environment["Contpaqi__RutaSdk"] = _config.RutaSdk;
             psi.Environment["Contpaqi__PermitirEscritura"] = "true";
+            // Inicio con usuario y contraseña: la contraseña guardada (cifrada en este servidor) o, si SUPERVISOR no tiene, vacía.
+            if (_config.InicioSinDialogo && Secretos.LeerClaveSdk() is { Length: > 0 } claveSdk) psi.Environment["ACUSA_CLAVE_SDK"] = claveSdk;
             // Escritura: las empresas marcadas como «Producción» (reales, sin prefijo PRUEBA) y las de pruebas; el resto queda de consulta.
             var atendidas = new[] { empresa }.Concat(_config.Empresas).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var reales = atendidas.Where(x => _config.EmpresasReales.Contains(x, StringComparer.OrdinalIgnoreCase)).ToList();
