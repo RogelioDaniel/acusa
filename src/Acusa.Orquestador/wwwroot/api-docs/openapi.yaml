@@ -4152,8 +4152,8 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Ingresa el token obtenido de /users/sessions para autenticar tus
-        solicitudes.
+      description: Pegue su llave de API (empieza con ak_) o un token obtenido en
+        /api/auth/token o /users/sessions.
   schemas:
     user:
       type: object

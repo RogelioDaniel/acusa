@@ -93,7 +93,7 @@ public partial class Asistente : Window
         _sqlServidor.Text = _cfg.SqlServidor; _sqlUsuario.Text = _cfg.SqlUsuario; _sqlWindows.IsChecked = _cfg.SqlWindows; _sqlOmitir.IsChecked = _cfg.SqlOmitido;
         _usuarioSdk.Text = _cfg.UsuarioSdk; _nombrePaq.Text = _cfg.NombrePaq; _rutaSdk.Text = _cfg.RutaSdk; _sinDialogo.IsChecked = _cfg.InicioSinDialogo;
         _omitirConta.IsChecked = true;
-        _llaveAuto.IsChecked = true;
+        _llavePegada.IsChecked = true;
 
         // 1 Bienvenida
         var bien = new TextBlock { Text = "Este asistente deja el worker listo en este equipo: inicia sesión en Acusa Central, revisa el acceso a CONTPAQi, crea la llave del worker y registra las empresas que va a atender.\n\nNo se guarda ninguna contraseña en claro. Tarda unos minutos.", TextWrapping = TextWrapping.Wrap, FontSize = 13.5, Foreground = (Brush)FindResource("Tinta"), TextAlignment = TextAlignment.Center };
@@ -129,12 +129,12 @@ public partial class Asistente : Window
             Nota("Se genera una sola vez. Si reinstala en el mismo equipo se conserva.")));
 
         // 7 Llave de API
-        _llaveAuto.Content = "Crear la llave automáticamente con la cuenta administradora (recomendado)";
-        _llavePegada.Content = "Pegar una llave de worker que ya tengo";
+        _llaveAuto.Content = "Crear una llave nueva con la cuenta administradora (se pierde si Acusa Central se reconstruye)";
+        _llavePegada.Content = "Pegar la llave de worker que me entregaron (recomendado: no se pierde)";
         _llaveAuto.Margin = new Thickness(0, 6, 0, 0); _llavePegada.Margin = new Thickness(0, 10, 0, 0);
         _paginas.Add(ArmarPagina("Llave de API", "Conecta este equipo con Acusa Central. La misma llave autentica al worker sin abrir otra sesión.",
             _llaveAuto, _llavePegada, Etiqueta("Llave del worker (solo si la pega)"), _llaveManual,
-            Nota("Tip: no necesita crear un usuario extra para el worker; use la cuenta administradora para instalar y la llave para identificar al equipo.")));
+            Nota("Use la llave del worker (empieza con wk_) que entrega el administrador de Acusa Central. Una llave creada automáticamente deja de servir si la base de Central se reconstruye.")));
 
         // 8 Empresas
         _detComercial.Content = "Comercial"; _detNominas.Content = "Nóminas"; _detConta.Content = "Contabilidad/Bancos";

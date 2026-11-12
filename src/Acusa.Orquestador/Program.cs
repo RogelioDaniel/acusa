@@ -475,7 +475,12 @@ static Identidad? Autenticar(HttpContext http, Almacen almacen, Seguridad seguri
         return null;
     }
 
-    var identidad = seguridad.ValidarToken(cabecera[7..].Trim(), DateTimeOffset.UtcNow);
+    // Se acepta el token de /api/auth/token o, directamente, la llave de API (ak_…): así Swagger «Authorize» y Postman
+    // pueden usar la llave sin el paso del token.
+    var credencial = cabecera[7..].Trim();
+    var identidad = credencial.StartsWith("ak_", StringComparison.Ordinal) || credencial.StartsWith("wk_", StringComparison.Ordinal)
+        ? almacen.BuscarLlave(credencial)
+        : seguridad.ValidarToken(credencial, DateTimeOffset.UtcNow);
     if (identidad is null || !roles.Contains(identidad.Rol))
     {
         return null;
