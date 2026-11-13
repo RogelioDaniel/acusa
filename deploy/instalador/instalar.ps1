@@ -35,7 +35,12 @@ New-Item -ItemType Directory -Force $destino | Out-Null
 foreach ($f in 'Acusa.Worker.Desktop.exe', 'Acusa.Sdk.Worker.exe', 'appsettings.json', 'acusa.ico', 'instalar.ps1', 'servicio.ps1') {
     Copy-Item (Join-Path $origen $f) $destino -Force
 }
-if ($servicioActivo) { Start-Service AcusaWorker }
+
+# El worker es un servicio de Windows: se registra aquí (arranca con el servidor y se reinicia solo si falla). Si ya hay configuración
+# de una instalación anterior, o el servicio estaba corriendo, se inicia; si no, lo inicia la app al terminar el asistente.
+& (Join-Path $destino 'servicio.ps1') -Accion Instalar | Out-Null
+$hayConfiguracion = Test-Path (Join-Path $env:ProgramData 'Acusa\worker-desktop.json')
+if ($servicioActivo -or $hayConfiguracion) { Start-Service AcusaWorker -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force $inicio | Out-Null
 Nuevo-Acceso (Join-Path $inicio 'Acusa Worker.lnk') (Join-Path $destino 'Acusa.Worker.Desktop.exe')
 Nuevo-Acceso $escritorio (Join-Path $destino 'Acusa.Worker.Desktop.exe')

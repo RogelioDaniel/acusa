@@ -20,12 +20,16 @@ namespace Acusa.Worker.Desktop;
 /// </summary>
 public partial class Asistente : Window
 {
+    // Los diez pasos originales siguen existiendo por dentro (los números de caso de la validación no cambian), pero solo se muestran
+    // los que el worker necesita: base de datos, Contabilidad y el identificador del equipo se resuelven solos.
     private static readonly string[] Pasos =
     {
-        "Bienvenida|Inicio de configuración", "Autenticación|Iniciar sesión", "Base de datos|Configuración SQL",
-        "SDK CONTPAQi|Llaves del SDK", "SDK Contabilidad|Credenciales Contabilidad", "Equipo|ID de servicio",
-        "Llave de API|Clave de acceso", "Empresas|Seleccionar empresas", "Revisión|Confirmar datos", "Completado|Configuración exitosa",
+        "Bienvenida", "Iniciar sesión", "Base de datos", "CONTPAQi Comercial", "Contabilidad", "Equipo",
+        "Llave del worker", "Empresas", "Revisión", "Listo",
     };
+
+    private static readonly int[] Visibles = { 0, 1, 3, 6, 7, 8, 9 };
+    private static int PosicionVisible(int paso) => Array.IndexOf(Visibles, paso);
 
     private readonly Config _cfg;
     private readonly List<UIElement> _paginas = new();
@@ -52,23 +56,21 @@ public partial class Asistente : Window
         if (string.IsNullOrEmpty(_cfg.EquipoId)) _cfg.EquipoId = Guid.NewGuid().ToString("N")[..16];
         ConstruirPasos();
         ConstruirPaginas();
-        Mostrar(int.TryParse(Environment.GetEnvironmentVariable("ACUSA_ASISTENTE_PASO"), out var n) && n is >= 0 and <= 9 ? n : 0);
+        Mostrar(int.TryParse(Environment.GetEnvironmentVariable("ACUSA_ASISTENTE_PASO"), out var n) && PosicionVisible(n) >= 0 ? n : 0);
     }
 
     // ------------------------------------------------------------------ construcción
 
     private void ConstruirPasos()
     {
-        for (var i = 0; i < Pasos.Length; i++)
+        for (var n = 0; n < Visibles.Length; n++)
         {
-            var partes = Pasos[i].Split('|');
             var circulo = new Border { Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Background = Brushes.White, BorderBrush = (Brush)FindResource("Borde"), BorderThickness = new Thickness(1.5), Margin = new Thickness(0, 0, 10, 0) };
-            circulo.Child = new TextBlock { Text = (i + 1).ToString(), FontSize = 11.5, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Suave") };
-            var titulo = new TextBlock { Text = partes[0], FontWeight = FontWeights.SemiBold, FontSize = 12.5 };
-            var sub = new TextBlock { Text = partes[1], FontSize = 10.5, Foreground = (Brush)FindResource("Suave") };
-            var fila = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
+            circulo.Child = new TextBlock { Text = (n + 1).ToString(), FontSize = 11.5, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Suave") };
+            var titulo = new TextBlock { Text = Pasos[Visibles[n]], FontWeight = FontWeights.SemiBold, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+            var fila = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 6) };
             fila.Children.Add(circulo);
-            fila.Children.Add(new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { titulo, sub } });
+            fila.Children.Add(titulo);
             ListaPasos.Children.Add(fila);
             _marcas.Add((circulo, titulo));
         }
@@ -78,7 +80,8 @@ public partial class Asistente : Window
     {
         var raiz = new StackPanel { MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Center };
         raiz.Children.Add(new TextBlock { Text = titulo, FontSize = 26, FontWeight = FontWeights.ExtraBold, HorizontalAlignment = HorizontalAlignment.Center });
-        raiz.Children.Add(new TextBlock { Text = sub, Foreground = (Brush)FindResource("Suave"), FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 4, 0, 18) });
+        if (!string.IsNullOrEmpty(sub)) raiz.Children.Add(new TextBlock { Text = sub, Foreground = (Brush)FindResource("Suave"), FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 4, 0, 18) });
+        else raiz.Children.Add(new Border { Height = 18 });
         foreach (var h in hijos) raiz.Children.Add(h);
         return raiz;
     }
@@ -94,76 +97,55 @@ public partial class Asistente : Window
         _usuarioSdk.Text = _cfg.UsuarioSdk; _nombrePaq.Text = _cfg.NombrePaq; _rutaSdk.Text = _cfg.RutaSdk; _sinDialogo.IsChecked = _cfg.InicioSinDialogo;
         _omitirConta.IsChecked = true;
         _llavePegada.IsChecked = true;
+        _llaveAuto.IsChecked = false;
 
         // 1 Bienvenida
-        var bien = new TextBlock { Text = "Este asistente deja el worker listo en este equipo: inicia sesión en Acusa Central, revisa el acceso a CONTPAQi, crea la llave del worker y registra las empresas que va a atender.\n\nNo se guarda ninguna contraseña en claro. Tarda unos minutos.", TextWrapping = TextWrapping.Wrap, FontSize = 13.5, Foreground = (Brush)FindResource("Tinta"), TextAlignment = TextAlignment.Center };
-        _paginas.Add(ArmarPagina("Bienvenido a Acusa", "Configuración inicial del worker de este equipo.", bien));
+        var bien = new TextBlock { Text = "Conecta el worker de este servidor con Acusa Central.", TextWrapping = TextWrapping.Wrap, FontSize = 14, Foreground = (Brush)FindResource("Tinta"), TextAlignment = TextAlignment.Center };
+        _paginas.Add(ArmarPagina("Acusa Worker", "", bien));
 
         // 2 Autenticación
-        _paginas.Add(ArmarPagina("Iniciar sesión", "Use la cuenta administradora de Acusa Central. El worker no consume una sesión humana.",
+        _paginas.Add(ArmarPagina("Iniciar sesión", "",
             Etiqueta("Dirección de Acusa Central"), _url, Etiqueta("Usuario (correo)"), _correo, Etiqueta("Contraseña"), _contrasena));
 
-        // 3 Base de datos
-        _sqlWindows.Content = "Usar autenticación de Windows (Integrated Security)";
-        _sqlOmitir.Content = "Omitir: este worker no necesita SQL para operar";
-        _paginas.Add(ArmarPagina("Configuración manual", "Ingrese los datos de conexión a SQL Server de CONTPAQi.",
-            Etiqueta("Servidor (Data Source)"), _sqlServidor, _sqlWindows, Etiqueta("Usuario"), _sqlUsuario, Etiqueta("Contraseña"), _sqlClave,
-            Nota(@"Ejemplos de servidor: SERVIDOR\COMPAC, localhost\SQLEXPRESS"), _sqlOmitir, Boton("Probar conexión", ProbarSql_Click), _estadoSql));
+        // 3 Base de datos: sin pantalla; el worker opera con el SDK y no necesita SQL
+        _sqlOmitir.IsChecked = true;
+        _paginas.Add(new StackPanel());
 
-        // 4 SDK CONTPAQi
-        _sinDialogo.Content = "Iniciar sesión sin diálogo (experimental)";
-        _paginas.Add(ArmarPagina("Llaves del SDK CONTPAQi", "Credenciales del SDK de CONTPAQi Comercial.",
-            Etiqueta("Usuario SDK"), _usuarioSdk, Etiqueta("Contraseña SDK (vacía para SUPERVISOR sin clave)"), _sdkClave, Etiqueta("Nombre PAQ (aplicación)"), _nombrePaq,
-            Etiqueta("Ruta del sistema CONTPAQi"), _rutaSdk, _sinDialogo, Boton("Validar conexión SDK", ProbarSdk_Click), _estadoSdk,
-            Nota("La contraseña del SDK no se guarda. Con el inicio por diálogo, CONTPAQi muestra «Ingreso a CONTPAQi COMERCIAL» al arrancar el worker y alguien debe aceptarlo.")));
+        // 4 CONTPAQi Comercial: el servicio abre el SDK con usuario y contraseña (sin sesión de usuario no hay diálogo)
+        _sinDialogo.IsChecked = true;
+        _paginas.Add(ArmarPagina("CONTPAQi Comercial", "",
+            Etiqueta("Usuario del SDK"), _usuarioSdk, Etiqueta("Contraseña del SDK (vacía si el usuario no tiene)"), _sdkClave));
 
-        // 5 SDK Contabilidad
-        _omitirConta.Content = "No tengo CONTPAQi Contabilidad instalado / no lo uso: omitir este paso";
-        _paginas.Add(ArmarPagina("SDK CONTPAQi Contabilidad", "Esta versión del worker no usa Contabilidad.", _omitirConta,
-            Nota("El SDK de Contabilidad se usará cuando haya operaciones de ese sistema. Por ahora el paso se omite sin consecuencias.")));
+        // 5 Contabilidad y 6 Equipo: sin pantalla
+        _paginas.Add(new StackPanel());
+        _paginas.Add(new StackPanel());
 
-        // 6 Equipo
-        _equipo.Text = $"Equipo: {Environment.MachineName}\nID de servicio: {_cfg.EquipoId}";
-        _equipo.FontFamily = new FontFamily("Consolas"); _equipo.FontSize = 13; _equipo.Margin = new Thickness(0, 6, 0, 0);
-        _paginas.Add(ArmarPagina("Equipo", "Este identificador distingue a este worker en Acusa Central.", _equipo,
-            Nota("Se genera una sola vez. Si reinstala en el mismo equipo se conserva.")));
-
-        // 7 Llave de API
-        _llaveAuto.Content = "Crear una llave nueva con la cuenta administradora (se pierde si Acusa Central se reconstruye)";
-        _llavePegada.Content = "Pegar la llave de worker que me entregaron (recomendado: no se pierde)";
-        _llaveAuto.Margin = new Thickness(0, 6, 0, 0); _llavePegada.Margin = new Thickness(0, 10, 0, 0);
-        _paginas.Add(ArmarPagina("Llave de API", "Conecta este equipo con Acusa Central. La misma llave autentica al worker sin abrir otra sesión.",
-            _llaveAuto, _llavePegada, Etiqueta("Llave del worker (solo si la pega)"), _llaveManual,
-            Nota("Use la llave del worker (empieza con wk_) que entrega el administrador de Acusa Central. Una llave creada automáticamente deja de servir si la base de Central se reconstruye.")));
+        // 7 Llave del worker
+        _paginas.Add(ArmarPagina("Llave del worker", "",
+            Etiqueta("Llave del worker (empieza con wk_)"), _llaveManual));
 
         // 8 Empresas
-        _detComercial.Content = "Comercial"; _detNominas.Content = "Nóminas"; _detConta.Content = "Contabilidad/Bancos";
         _detComercial.IsChecked = true;
-        foreach (var c in new[] { _detComercial, _detNominas, _detConta }) { c.Margin = new Thickness(10, 0, 0, 6); c.VerticalAlignment = VerticalAlignment.Center; c.Checked += (_, _) => CargarEmpresas(); c.Unchecked += (_, _) => CargarEmpresas(); }
         var barra = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
         barra.Children.Add(Boton("↻ Actualizar", (_, _) => CargarEmpresas())); ((Button)barra.Children[0]).Margin = new Thickness(0, 0, 8, 6); ((Button)barra.Children[0]).Padding = new Thickness(12, 6, 12, 6);
         var todas = Boton("Seleccionar todas", (_, _) => { foreach (var e in _empresas) e.Marca.IsChecked = true; ActualizarContador(); }); todas.Margin = new Thickness(0, 0, 8, 6); todas.Padding = new Thickness(12, 6, 12, 6);
         var ninguna = Boton("Deseleccionar", (_, _) => { foreach (var e in _empresas) e.Marca.IsChecked = false; ActualizarContador(); }); ninguna.Margin = new Thickness(0, 0, 8, 6); ninguna.Padding = new Thickness(12, 6, 12, 6);
         barra.Children.Add(todas); barra.Children.Add(ninguna);
-        barra.Children.Add(new TextBlock { Text = "Detectar:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 6), Foreground = (Brush)FindResource("Suave"), FontSize = 12 });
-        barra.Children.Add(_detComercial); barra.Children.Add(_detNominas); barra.Children.Add(_detConta);
         var caja = new Border { BorderBrush = (Brush)FindResource("Borde"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 270, Child = new ScrollViewer { Content = _listaEmpresas, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
         var p8 = new StackPanel { MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Center };
         p8.Children.Add(new TextBlock { Text = "Seleccionar empresas", FontSize = 26, FontWeight = FontWeights.ExtraBold });
-        p8.Children.Add(new TextBlock { Text = @"Selecciona las empresas a configurar desde C:\Compac\Empresas", Foreground = (Brush)FindResource("Suave"), Margin = new Thickness(0, 4, 0, 14) });
+        p8.Children.Add(new Border { Height = 14 });
         p8.Children.Add(barra); _estadoEmpresas.HorizontalAlignment = HorizontalAlignment.Right; _estadoEmpresas.Foreground = (Brush)FindResource("Suave"); _estadoEmpresas.FontSize = 12; _estadoEmpresas.Margin = new Thickness(0, 0, 0, 6);
         p8.Children.Add(_estadoEmpresas); p8.Children.Add(caja);
-        p8.Children.Add(Nota("Marque las empresas que atenderá este worker. «Producción» = empresa real: admite escritura (crear y timbrar) sin exigir el prefijo PRUEBA. Sin esa marca la empresa es de consulta (salvo las de pruebas, con PRUEBA en el nombre). «Principal» es la que se abre primero."));
         _paginas.Add(p8);
 
         // 9 Revisión
-        _resumen.TextWrapping = TextWrapping.Wrap; _resumen.FontSize = 13; _resumen.LineHeight = 22;
-        _paginas.Add(ArmarPagina("Revisar configuración", "Verifique que todos los datos sean correctos antes de continuar.", _resumen,
-            Nota("Al pulsar «Instalar» se registrarán las empresas y la llave en Acusa Central.")));
+        _resumen.TextWrapping = TextWrapping.Wrap; _resumen.FontSize = 13.5; _resumen.LineHeight = 24;
+        _paginas.Add(ArmarPagina("Revisión", "", _resumen));
 
-        // 10 Completado
-        _resultado.TextWrapping = TextWrapping.Wrap; _resultado.FontSize = 13; _resultado.LineHeight = 22;
-        _paginas.Add(ArmarPagina("¡Configuración completada!", "El worker quedó listo en este equipo.", _resultado));
+        // 10 Listo
+        _resultado.TextWrapping = TextWrapping.Wrap; _resultado.FontSize = 13.5; _resultado.LineHeight = 24;
+        _paginas.Add(ArmarPagina("Listo", "", _resultado));
     }
 
     // ------------------------------------------------------------------ navegación
@@ -173,18 +155,19 @@ public partial class Asistente : Window
         _paso = i;
         Pagina.Content = _paginas[i];
         Mensaje.Text = "";
+        var pos = PosicionVisible(i);
         for (var k = 0; k < _marcas.Count; k++)
         {
             var (c, t) = _marcas[k];
-            var hecho = k < i;
-            var actual = k == i;
+            var hecho = k < pos;
+            var actual = k == pos;
             c.Background = hecho ? new SolidColorBrush(Color.FromRgb(0x0B, 0x6B, 0x50)) : actual ? (Brush)FindResource("Acento") : Brushes.White;
             c.BorderBrush = hecho ? c.Background : actual ? c.Background : (Brush)FindResource("Borde");
             ((TextBlock)c.Child).Foreground = hecho || actual ? Brushes.White : (Brush)FindResource("Suave");
             t.Foreground = actual ? (Brush)FindResource("Acento") : (Brush)FindResource("Tinta");
         }
 
-        var pct = (int)Math.Round(100.0 * i / (Pasos.Length - 1));
+        var pct = (int)Math.Round(100.0 * pos / (Visibles.Length - 1));
         Barra.Value = pct; TextoProgreso.Text = pct + "%";
         BotonAnterior.Visibility = i is 0 or 9 ? Visibility.Hidden : Visibility.Visible;
         BotonSiguiente.Content = i switch { 8 => "Instalar", 9 => "Finalizar", _ => "Siguiente →" };
@@ -192,7 +175,7 @@ public partial class Asistente : Window
         if (i == 8) ArmarResumen();
     }
 
-    private void Anterior_Click(object sender, RoutedEventArgs e) { if (_paso > 0 && _paso != 9) Mostrar(_paso - 1); }
+    private void Anterior_Click(object sender, RoutedEventArgs e) { var pos = PosicionVisible(_paso); if (pos > 0 && _paso != 9) Mostrar(Visibles[pos - 1]); }
 
     private async void Siguiente_Click(object sender, RoutedEventArgs e)
     {
@@ -208,7 +191,7 @@ public partial class Asistente : Window
                 if (fallo is not null) { Mensaje.Text = fallo; return; }
             }
 
-            Mostrar(_paso + 1);
+            Mostrar(Visibles[PosicionVisible(_paso) + 1]);
         }
         finally { BotonSiguiente.IsEnabled = true; BotonAnterior.IsEnabled = true; }
     }
@@ -218,7 +201,7 @@ public partial class Asistente : Window
         switch (paso)
         {
             case 1:
-                if (!Uri.TryCreate(_url.Text.Trim(), UriKind.Absolute, out _)) return "Escriba la dirección de Acusa Central, por ejemplo http://127.0.0.1:5090.";
+                if (!Uri.TryCreate(_url.Text.Trim(), UriKind.Absolute, out _)) return "Escriba la dirección de Acusa Central.";
                 if (string.IsNullOrWhiteSpace(_correo.Text) || _contrasena.Password.Length == 0) return "Escriba el usuario y la contraseña.";
                 Mensaje.Foreground = Brushes.Gray; Mensaje.Text = "Iniciando sesión…";
                 try
@@ -241,10 +224,10 @@ public partial class Asistente : Window
             case 3:
                 if (string.IsNullOrWhiteSpace(_usuarioSdk.Text)) return "Escriba el usuario del SDK.";
                 if (!File.Exists(Path.Combine(_rutaSdk.Text.Trim(), "MGWServicios.dll"))) return "No se encontró MGWServicios.dll en esa ruta. Revise la ruta del sistema CONTPAQi.";
-                _cfg.UsuarioSdk = _usuarioSdk.Text.Trim(); _cfg.NombrePaq = _nombrePaq.Text.Trim(); _cfg.RutaSdk = _rutaSdk.Text.Trim(); _cfg.InicioSinDialogo = _sinDialogo.IsChecked == true;
+                _cfg.UsuarioSdk = _usuarioSdk.Text.Trim(); _cfg.NombrePaq = _nombrePaq.Text.Trim(); _cfg.RutaSdk = _rutaSdk.Text.Trim(); _cfg.InicioSinDialogo = true;
                 return null;
             case 6:
-                if (_llavePegada.IsChecked == true && !_llaveManual.Password.StartsWith("wk_", StringComparison.Ordinal)) return "La llave de un worker empieza con wk_. Revise lo que pegó.";
+                if (!_llaveManual.Password.Trim().StartsWith("wk_", StringComparison.Ordinal)) return "La llave de un worker empieza con wk_. Revise lo que pegó.";
                 return null;
             case 7:
                 var marcadas = _empresas.Where(x => x.Marca.IsChecked == true).ToList();
@@ -329,11 +312,7 @@ public partial class Asistente : Window
         _resumen.Text =
             $"Acusa Central:  {_url.Text.Trim()}\n" +
             $"Usuario:  {_correo.Text.Trim()}\n" +
-            $"SQL Server:  {(_sqlOmitir.IsChecked == true ? "omitido" : _sqlServidor.Text.Trim())}\n" +
-            $"SDK CONTPAQi:  {_usuarioSdk.Text.Trim()} · {_nombrePaq.Text.Trim()}\n" +
-            $"SDK Contabilidad:  omitido\n" +
-            $"Equipo:  {Environment.MachineName} · {_cfg.EquipoId}\n" +
-            $"Llave de API:  {(_llaveAuto.IsChecked == true ? "se creará automáticamente" : "la que pegó")}\n" +
+            $"Usuario del SDK:  {_usuarioSdk.Text.Trim()}\n" +
             $"Empresas:  {sel.Count} seleccionadas · principal {principal}";
     }
 
@@ -351,7 +330,7 @@ public partial class Asistente : Window
                 if (!r.IsSuccessStatusCode) return await MensajeError(r, "No se pudo crear la llave del worker.");
                 llave = (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("llave").GetString()!;
             }
-            else llave = _llaveManual.Password;
+            else llave = _llaveManual.Password.Trim();
 
             var sel = _empresas.Where(x => x.Marca.IsChecked == true).Select(x => x.Carpeta).ToList();
             var nuevas = 0;
@@ -363,19 +342,20 @@ public partial class Asistente : Window
             }
 
             Secretos.GuardarLlave(llave);
+            if (_sdkClave.Password.Length > 0) Secretos.GuardarClaveSdk(_sdkClave.Password);
             _cfg.Empresas = sel;
             _cfg.EmpresasReales = _empresas.Where(x => x.Marca.IsChecked == true && x.Real.IsChecked == true).Select(x => x.Carpeta).ToList();
             _cfg.Empresa = _empresas.First(x => x.Principal.IsChecked == true && x.Marca.IsChecked == true).Carpeta;
+            _cfg.InicioSinDialogo = true;
             _cfg.Configurado = true;
             if (string.IsNullOrEmpty(_cfg.PropietarioSid)) { _cfg.PropietarioSid = Acceso.SidActual; _cfg.PropietarioNombre = Acceso.NombreActual; }
             _cfg.Guardar();
             _instalado = true;
             _resultado.Text =
-                "✔ Credenciales de Acusa Central verificadas\n" +
-                "✔ Llave del worker guardada cifrada en este equipo\n" +
-                "✔ Configuración guardada sin contraseñas\n" +
-                $"✔ {sel.Count} empresas configuradas ({nuevas} nuevas en Acusa Central)\n\n" +
-                $"Principal: {_cfg.Empresa}\nConfiguración: {Config.RutaArchivo}";
+                "✔ Acusa Central verificado\n" +
+                "✔ Llave del worker guardada cifrada en este servidor\n" +
+                $"✔ {sel.Count} empresas configuradas\n\n" +
+                "El worker se inicia al cerrar el asistente.";
             return null;
         }
         catch (Exception ex) { return "No se pudo instalar: " + ex.Message; }

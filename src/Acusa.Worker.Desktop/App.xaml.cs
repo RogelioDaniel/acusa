@@ -46,9 +46,19 @@ public partial class App : System.Windows.Application
                 : "Acusa Worker todavía no está configurado. Debe configurarlo un administrador.";
         }
 
-        // Primera vez en este servidor: el asistente de configuración, como el de Montek.
-        if (puedeControlar && !cfg.Configurado) new Asistente(cfg).ShowDialog();
-        var ventana = new MainWindow(!puedeControlar, aviso, automatico);
+        // Versiones anteriores abrían la aplicación al iniciar sesión; ahora el worker es un servicio y eso ya no hace falta.
+        try { using var run = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true); run?.DeleteValue("AcusaWorker", false); } catch { }
+
+        // Primera vez en este servidor: el asistente de configuración. Al terminar, el servicio se inicia solo.
+        var iniciarServicio = false;
+        if (puedeControlar && !cfg.Configurado)
+        {
+            var asistente = new Asistente(cfg);
+            asistente.ShowDialog();
+            iniciarServicio = asistente.Instalado;
+        }
+
+        var ventana = new MainWindow(!puedeControlar, aviso, iniciarServicio);
         if (!automatico || !puedeControlar) ventana.Show();
     }
 

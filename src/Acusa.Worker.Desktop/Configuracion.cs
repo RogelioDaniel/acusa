@@ -16,7 +16,7 @@ namespace Acusa.Worker.Desktop;
 public sealed class Config
 {
     public bool Configurado { get; set; }
-    public string Url { get; set; } = "http://127.0.0.1:5090";
+    public string Url { get; set; } = "https://acusa-i331.onrender.com";
     public string Correo { get; set; } = "";
     public string EquipoId { get; set; } = "";
 

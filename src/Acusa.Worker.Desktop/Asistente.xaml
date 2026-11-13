@@ -1,7 +1,7 @@
 <Window x:Class="Acusa.Worker.Desktop.Asistente"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Configuración de Acusa Worker" Width="1000" Height="660" MinWidth="900" MinHeight="600"
+        Icon="acusa.ico" Title="Configuración de Acusa Worker" Width="1000" Height="660" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" Foreground="{StaticResource Tinta}">
     <Window.Background><SolidColorBrush Color="#F2F4EE"/></Window.Background>
 
@@ -22,11 +22,10 @@
                 </Grid.RowDefinitions>
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
-                        <Border Margin="0,0,10,0"><Viewbox Width="40" Height="40"><Canvas Width="32" Height="32"><Path Fill="#0B6B50" Data="M7,2 L21,2 L28,9 L28,28 A2,2 0 0 1 26,30 L7,30 A2,2 0 0 1 5,28 L5,4 A2,2 0 0 1 7,2 Z"/><Path Fill="#FFFFFF" Opacity="0.4" Data="M21,2 L28,9 L23,9 A2,2 0 0 1 21,7 Z"/><Path Stroke="White" StrokeThickness="2.4" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M10.5,25 L16,10.5 L21.5,25 M12.5,20.2 L19.5,20.2"/></Canvas></Viewbox></Border>
+                        <Image Source="acusa.ico" Width="40" Height="40" Margin="0,0,10,0" RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock Text="Acusa" FontSize="24" FontWeight="ExtraBold" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="Configuración del worker" FontWeight="SemiBold" Margin="0,12,0,0"/>
-                    <TextBlock Text="Instala, valida y deja listo el worker local." Foreground="{StaticResource Suave}" FontSize="11.5" TextWrapping="Wrap" Margin="0,2,0,12"/>
+                    <TextBlock Text="Configuración del worker" FontWeight="SemiBold" Margin="0,12,0,16"/>
                 </StackPanel>
                 <StackPanel Grid.Row="1" x:Name="ListaPasos" VerticalAlignment="Top"/>
                 <StackPanel Grid.Row="2">
