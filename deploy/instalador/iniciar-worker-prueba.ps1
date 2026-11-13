@@ -6,6 +6,7 @@ Uso (PowerShell, en la carpeta donde se extrajo el zip):   .\iniciar-worker-prue
 Opciones:
   -Empresa    Carpeta de la empresa en CONTPAQi (por omisión adEMPRESA_DE_PRUEBA). Debe estar registrada en Acusa Central.
   -Central    Dirección de Acusa Central.
+  -PuertoPanel  Puerto del panel local del worker de prueba (5096). El servicio de Windows ya usa el 5095.
   -SinTimbrado  No permite timbrar ni cancelar (solo clientes, productos y documentos).
   -ClaveEnComercial  No pide la contraseña del certificado: Comercial usa la que ya tenga guardada.
   -Forzar     Sigue aunque haya procesos de Montek o sean los minutos :00 a :14.
@@ -21,6 +22,7 @@ Seguridad:
 param(
     [string]$Empresa = 'adEMPRESA_DE_PRUEBA',
     [string]$Central = 'https://acusa-i331.onrender.com',
+    [int]$PuertoPanel = 5096,
     [switch]$SinTimbrado,
     [switch]$ClaveEnComercial,
     [switch]$Forzar
@@ -56,6 +58,7 @@ try {
 
 $env:Orquestador__Url = $Central
 $env:Orquestador__LlaveWorker = $llave
+$env:Panel__Puerto = [string]$PuertoPanel
 $env:Contpaqi__Modo = 'Real'
 $env:Contpaqi__Inicio = 'Dialogo'
 $env:Contpaqi__RutaEmpresa = "C:\Compac\Empresas\$Empresa"
@@ -73,6 +76,17 @@ if (-not $SinTimbrado) {
 }
 
 Write-Host "Arrancando el worker sobre $Empresa. CONTPAQi puede pedir la clave del SDK en esta sesión: escríbala en esa ventana." -ForegroundColor Cyan
-$p = Start-Process -FilePath $exe -ArgumentList @('--modo=real', '--sin-candado') -WorkingDirectory $aqui -PassThru
+$bitacora = Join-Path $aqui 'worker-prueba.log'
+$errores = Join-Path $aqui 'worker-prueba.err.log'
+Remove-Item $bitacora, $errores -ErrorAction SilentlyContinue
+$p = Start-Process -FilePath $exe -ArgumentList @('--modo=real', '--sin-candado') -WorkingDirectory $aqui -PassThru -WindowStyle Hidden -RedirectStandardOutput $bitacora -RedirectStandardError $errores
 Remove-Item Env:Orquestador__LlaveWorker, Env:ACUSA_CLAVE_CERTIFICADO, Env:Contpaqi__CertificadoGuardadoEnComercial -ErrorAction SilentlyContinue
-Write-Host "Worker iniciado (proceso $($p.Id)). Avise para correr las pruebas. Para detenerlo: Stop-Process -Id $($p.Id)" -ForegroundColor Green
+Start-Sleep -Seconds 12
+if ($p.HasExited) {
+    Write-Host "El worker se cerró al arrancar (código $($p.ExitCode)). Esto dice su registro:" -ForegroundColor Red
+    foreach ($f in $bitacora, $errores) { if (Test-Path $f) { Get-Content $f -Tail 15 } }
+    return
+}
+Write-Host "Worker iniciado (proceso $($p.Id)) y sigue corriendo. Registro: $bitacora" -ForegroundColor Green
+Get-Content $bitacora -Tail 6 -ErrorAction SilentlyContinue
+Write-Host "Para detenerlo: Stop-Process -Id $($p.Id)"
