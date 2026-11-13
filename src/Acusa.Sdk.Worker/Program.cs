@@ -22,7 +22,9 @@ using Microsoft.Extensions.Options;
 // entorno (Orquestador__*, Contpaqi__*). Con --simulado usa datos en memoria para probar sin CONTPAQi.
 // Un solo worker por servidor, sin importar el usuario o la sesión de Windows: el SDK de CONTPAQi admite un solo proceso.
 System.Threading.Mutex? candadoUnico = null;
-if (!args.Contains("--simulado", StringComparer.OrdinalIgnoreCase))
+// --sin-candado: solo para pruebas de un usuario sin permisos cuando el servicio de Windows no se puede detener. Dos procesos con el SDK a la vez
+// pueden cerrarse con un error nativo: no se usa durante las rachas de otras aplicaciones.
+if (!args.Contains("--simulado", StringComparer.OrdinalIgnoreCase) && !args.Contains("--sin-candado", StringComparer.OrdinalIgnoreCase))
 {
     var libre = false;
     try { candadoUnico = new System.Threading.Mutex(true, @"Global\Acusa.Sdk.Worker.Unico", out libre); }
