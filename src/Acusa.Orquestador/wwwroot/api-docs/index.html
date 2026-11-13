@@ -10,18 +10,24 @@ body{margin:0;background:#fafafa}
 #sesion button{padding:6px 14px;border:0;border-radius:3px;background:#0b6b50;color:#fff;font:inherit;cursor:pointer}
 #estado{margin-left:8px;color:#bfe3d3}
 #estado.error{color:#ffb4a8}
+#tema{margin-left:auto;background:#2a3a32}
+html[data-tema="oscuro"] body{background:#111}
+html[data-tema="oscuro"] #swagger-ui{filter:invert(1) hue-rotate(180deg)}
+html[data-tema="oscuro"] #swagger-ui img,html[data-tema="oscuro"] #swagger-ui .microlight{filter:invert(1) hue-rotate(180deg)}
 </style></head><body>
+<script>try{var t=localStorage.getItem("acusa.tema");if(!t&&window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)t="oscuro";document.documentElement.dataset.tema=t||"claro"}catch(e){}</script>
 <div id="sesion">
   <b>Acusa · API de facturación</b>
   <input id="llave" type="password" placeholder="Llave de API (ak_…)" autocomplete="off">
   <button id="entrar" type="button">Obtener token</button>
   <span id="estado">Pegue su llave de API para probar las rutas.</span>
+  <button id="tema" type="button">Modo oscuro</button>
 </div>
 <div id="swagger-ui"></div>
 <script src="swagger-ui-bundle.js"></script>
 <script>
   const ui = SwaggerUIBundle({
-    url: "openapi.yaml",
+    url: "openapi.yaml?v=" + Date.now(),
     dom_id: "#swagger-ui",
     deepLinking: true,
     persistAuthorization: false,
@@ -39,6 +45,15 @@ body{margin:0;background:#fafafa}
       estado.textContent = "Token listo (dura una hora). Ya puede usar «Try it out» en cualquier ruta.";
     } catch (e) { estado.className = "error"; estado.textContent = e.message; }
   }
+  const botonTema = document.getElementById("tema");
+  const textoTema = () => { botonTema.textContent = document.documentElement.dataset.tema === "oscuro" ? "Modo claro" : "Modo oscuro"; };
+  botonTema.addEventListener("click", () => {
+    const t = document.documentElement.dataset.tema === "oscuro" ? "claro" : "oscuro";
+    document.documentElement.dataset.tema = t;
+    try { localStorage.setItem("acusa.tema", t); } catch (e) {}
+    textoTema();
+  });
+  textoTema();
   document.getElementById("entrar").addEventListener("click", entrar);
   document.getElementById("llave").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
 </script>

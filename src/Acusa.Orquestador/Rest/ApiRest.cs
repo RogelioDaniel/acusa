@@ -36,6 +36,13 @@ public static class ApiRest
         // ---- Clientes -----------------------------------------------------------------------------------------------
         Ruta(e, "POST", "/clientes", true, c => Orden(c, Operaciones.ClienteCrear, Campos(c.Cuerpo!, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "email", "regimenFiscal", "usoCfdi"), 201,
             Requeridos(c.Cuerpo!, ("codigo", "Codigo"), ("razonSocial", "Razon social"), ("rfc", "Rfc"))));
+        Ruta(e, "POST", "/clientes/{codigo}/direcciones", true, c =>
+        {
+            var p = Campos(c.Cuerpo!, "tipo", "calle", "numeroExterior", "numeroInterior", "colonia", "codigoPostal", "municipio", "ciudad", "estado", "pais");
+            p["codigoCliente"] = c.Ruta("codigo");
+            return Orden(c, Operaciones.DireccionCrear, p, 201, Requeridos(c.Cuerpo!, ("codigoPostal", "Codigo postal")));
+        });
+        Ruta(e, "GET", "/clientes/{codigo}/direcciones/{tipo}", false, c => Orden(c, Operaciones.DireccionLeer, new { codigoCliente = c.Ruta("codigo"), tipo = c.Ruta("tipo") }));
         Ruta(e, "GET", "/clientes/{codigo}", false, c => Orden(c, Operaciones.ClienteLeer, new { codigo = c.Ruta("codigo") }));
         Ruta(e, "PATCH", "/clientes/{codigo}", true, c =>
         {
@@ -48,9 +55,18 @@ public static class ApiRest
         Ruta(e, "POST", "/productos", true, c => Orden(c, Operaciones.ProductoCrear, Campos(c.Cuerpo!, "codigo", "nombre", "unidadBase", "precio1", "descripcion", "claveSat", "tipoProducto", "textosExtra"), 201,
             Requeridos(c.Cuerpo!, ("codigo", "Codigo"), ("nombre", "Nombre"), ("unidadBase", "Unidad base"))));
         Ruta(e, "GET", "/productos/{codigo}", false, c => Orden(c, Operaciones.ProductoLeer, new { codigo = c.Ruta("codigo") }));
+        Ruta(e, "PATCH", "/productos/{codigo}", true, c =>
+        {
+            var p = Campos(c.Cuerpo!, "nombre", "descripcion", "precio1", "claveSat", "textosExtra");
+            p["codigo"] = c.Ruta("codigo");
+            return Orden(c, Operaciones.ProductoActualizar, p, 200, p.Count == 1 ? ["No hay datos que actualizar"] : []);
+        });
 
         // ---- Documentos ---------------------------------------------------------------------------------------------
         Ruta(e, "POST", "/documentos", true, CrearDocumentoAsync);
+        Ruta(e, "POST", "/documentos/timbrado", true, c => LoteAsync(c, Operaciones.DocumentoEmitirLote, cancelar: false));
+        Ruta(e, "POST", "/documentos/cancelacion", true, c => LoteAsync(c, Operaciones.DocumentoCancelarLote, cancelar: true));
+        Ruta(e, "GET", "/documentos/{concepto}/{serie}/{folio}", false, LeerDocumentoAsync);
         Ruta(e, "POST", "/documentos/{concepto}/{serie}/{folio}/timbrado", false, TimbrarAsync);
         Ruta(e, "GET", "/documentos/{concepto}/{serie}/{folio}/xml", false, c => ArchivoAsync(c, "xml"));
         Ruta(e, "GET", "/documentos/{concepto}/{serie}/{folio}/pdf", false, c => ArchivoAsync(c, "pdf"));
@@ -195,6 +211,31 @@ public static class ApiRest
         }
 
         return true;
+    }
+
+    private static async Task<IResult> LeerDocumentoAsync(Contexto c)
+    {
+        if (!Clave(c, out var concepto, out var serie, out var folio, out var error)) return error!;
+        return await Orden(c, Operaciones.DocumentoLeer, new { concepto, serie, folio });
+    }
+
+    /// <summary>Timbrado o cancelación de varios documentos en una sola orden (hasta 25). El worker los procesa de uno en uno y detalla cada resultado.</summary>
+    private static async Task<IResult> LoteAsync(Contexto c, string tipo, bool cancelar)
+    {
+        var lista = (c.Cuerpo!["documentos"] as JsonArray)?.OfType<JsonObject>().ToList() ?? [];
+        var errores = new List<string>();
+        if (lista.Count is 0 or > Operaciones.MaximoDocumentosPorLote) errores.Add($"Documentos: un lote lleva entre 1 y {Operaciones.MaximoDocumentosPorLote}");
+        for (var i = 0; i < lista.Count; i++)
+        {
+            if (string.IsNullOrWhiteSpace(Txt(lista[i]["concepto"]))) errores.Add($"Documento {i + 1}: concepto no puede estar vacio");
+            if (Num(lista[i]["folio"]) is not > 0) errores.Add($"Documento {i + 1}: folio debe ser un número positivo");
+            if (cancelar && Txt(lista[i]["motivo"]) is not ("01" or "02" or "03" or "04")) errores.Add($"Documento {i + 1}: motivo debe ser 01, 02, 03 o 04");
+        }
+
+        var documentos = lista.Select(d => cancelar
+            ? (object)new { concepto = Txt(d["concepto"]), serie = Txt(d["serie"]) is { Length: > 0 } s && s != "-" ? s : null, folio = Num(d["folio"]), motivo = Txt(d["motivo"]), uuidSustituto = Txt(d["uuidSustituto"]) }
+            : new { concepto = Txt(d["concepto"]), serie = Txt(d["serie"]) is { Length: > 0 } s2 && s2 != "-" ? s2 : null, folio = Num(d["folio"]) }).ToList();
+        return await Orden(c, tipo, new { documentos }, 200, errores);
     }
 
     private static async Task<IResult> TimbrarAsync(Contexto c)

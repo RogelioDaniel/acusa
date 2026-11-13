@@ -70,7 +70,8 @@ app.UseDefaultFiles();
 // /api-docs: Swagger UI con las rutas de Alain sobre Acusa (openapi.yaml necesita su tipo de contenido).
 var tiposDeContenido = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 tiposDeContenido.Mappings[".yaml"] = "application/yaml";
-app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = tiposDeContenido });
+// Sin caché: el portal y la documentación se actualizan con cada despliegue y el navegador debe pedirlos de nuevo.
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = tiposDeContenido, OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache" });
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", producto = Marca.Producto, version = Marca.Version }));
 

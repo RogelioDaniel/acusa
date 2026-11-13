@@ -10,6 +10,20 @@ const PRODUCTO = "Acusa Central";
 
 const $ = (s, r = document) => r.querySelector(s);
 
+// Tema claro u oscuro: el elegido se recuerda; sin elección, el del sistema.
+const temaActual = () => document.documentElement.dataset.tema || "claro";
+function aplicarTema(t) {
+  document.documentElement.dataset.tema = t;
+  try { localStorage.setItem("acusa.tema", t); } catch { /* sin almacenamiento */ }
+}
+const botonTema = () => {
+  const b = h("button", { class: "boton-tema", type: "button", "aria-label": "Cambiar entre modo claro y oscuro" });
+  const texto = () => { b.textContent = temaActual() === "oscuro" ? "Modo claro" : "Modo oscuro"; };
+  b.addEventListener("click", () => { aplicarTema(temaActual() === "oscuro" ? "claro" : "oscuro"); texto(); });
+  texto();
+  return b;
+};
+
 function h(tag, attrs, ...hijos) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -98,7 +112,7 @@ function mostrarEntrada(mensaje) {
     h("label", { class: "campo", for: "clave" }, h("span", null, "Contraseña"), clave),
     error, boton);
   $("#app").replaceChildren(h("div", { class: "entrada" }, h("div", { class: "entrada-caja" },
-    marca("Central"), h("h1", null, "Entrar"), h("p", null, "Use la cuenta que le dio su administrador."), forma)));
+    marca("Central"), h("h1", null, "Entrar"), h("p", null, "Use la cuenta que le dio su administrador."), forma, h("div", { style: "margin-top:14px;text-align:right" }, botonTema()))));
   correo.focus();
 }
 
@@ -126,7 +140,7 @@ function arrancar() {
   const superior = h("header", { class: "superior" },
     h("span", { class: "cliente" }, u.cliente || "Local Solutions IT"),
     h("span", { class: "punto", id: "punto-estado", title: "Estado de los workers" }),
-    h("div", { class: "usuario" }, h("span", null, u.email || u.nombre || ""),
+    h("div", { class: "usuario" }, botonTema(), h("span", null, u.email || u.nombre || ""),
       h("button", { class: "boton suave chico", onclick: () => { sesion.borrar(); mostrarEntrada(); } }, "Cerrar sesión")));
   const pie = h("footer", { class: "pie" }, `${PRODUCTO} · versión ${VERSION}`);
   $("#app").replaceChildren(h("div", { class: "estructura" }, lateral, h("div", { class: "principal" }, superior, h("main", { id: "contenido" }), pie)));
@@ -276,10 +290,151 @@ function mostrarLlave(llave, rol) {
 
 // ---------------------------------------------------------------- desarrolladores
 
+// ---------------------------------------------------------------- consola de peticiones (Desarrolladores y Probar)
+
+/** Datos que se comparten entre peticiones: la empresa elegida, el último documento creado y el token propio, si lo hay. */
+const memoria = (() => {
+  let m = {};
+  try { m = JSON.parse(sessionStorage.getItem("acusa.memoria") || "{}"); } catch { /* sin almacenamiento */ }
+  return {
+    get: (k) => m[k],
+    set(k, v) { m[k] = v; try { sessionStorage.setItem("acusa.memoria", JSON.stringify(m)); } catch { /* sin almacenamiento */ } },
+    borrar(k) { delete m[k]; try { sessionStorage.setItem("acusa.memoria", JSON.stringify(m)); } catch { /* sin almacenamiento */ } },
+  };
+})();
+
+const tokenActual = () => memoria.get("token") || sesion.token;
+let _spec = null;
+const cargarSpec = () => (_spec ||= fetch("/api-docs/openapi.json").then((r) => { if (!r.ok) throw new Error("No se pudo cargar la definición de la API."); return r.json(); }));
+
+/** Operaciones de la definición, en orden, con su etiqueta. */
+function operaciones(spec) {
+  const r = [];
+  for (const [ruta, item] of Object.entries(spec.paths)) {
+    for (const [metodo, op] of Object.entries(item)) {
+      if (["get", "post", "put", "patch", "delete"].includes(metodo)) r.push({ metodo: metodo.toUpperCase(), ruta, op, tag: (op.tags && op.tags[0]) || "Otras" });
+    }
+  }
+  return r;
+}
+
+const ejemploDe = (op) => op.requestBody && op.requestBody.content && op.requestBody.content["application/json"] && op.requestBody.content["application/json"].example;
+const parametrosRuta = (ruta) => [...ruta.matchAll(/\{([^}]+)\}/g)].map((x) => x[1]);
+
+/** En una empresa de pruebas, los códigos de los ejemplos llevan el prefijo PRUEBA que exige el worker. */
+function paraEmpresa(texto) {
+  const e = memoria.get("empresa") || "";
+  if (!/PRUEBA/i.test(e)) return texto;
+  return texto.replaceAll("CLI0001", "PRUEBACL01").replaceAll("SERV0001", "PRUEBAPR01").replaceAll("FAC-0001", "PRUEBAFAC01").replace(/"serie": "A"/g, '"serie": "PRUEBA"').replace(/"serie":"A"/g, '"serie":"PRUEBA"');
+}
+
+async function enviar(metodo, url, cuerpo, extra = {}) {
+  const cabeceras = { ...(extra.cabeceras || {}) };
+  if (url.startsWith("/")) cabeceras.Authorization = "Bearer " + tokenActual();
+  if (cuerpo != null && cuerpo !== "" && !cabeceras["Content-Type"]) cabeceras["Content-Type"] = "application/json";
+  const t0 = performance.now();
+  const r = await fetch(url, { method: metodo, headers: cabeceras, body: cuerpo ? cuerpo : undefined });
+  const tipo = r.headers.get("content-type") || "";
+  let datos, blob = null;
+  if (tipo.includes("pdf")) { blob = await r.blob(); datos = `Archivo PDF (${blob.size} bytes)`; }
+  else { datos = await r.text(); if (tipo.includes("json")) { try { datos = JSON.stringify(JSON.parse(datos), null, 2); } catch { /* texto */ } } }
+  return { estado: r.status, ms: Math.round(performance.now() - t0), tipo, datos, blob, ubicacion: r.headers.get("location") };
+}
+
+/** Guarda lo que las respuestas dejan para la siguiente petición (concepto, serie y folio del documento). */
+function recordar(metodo, ruta, cuerpoTexto, res) {
+  if (res.estado < 200 || res.estado >= 300) return;
+  try {
+    const j = JSON.parse(res.datos);
+    const d = (j && j.resultado) || j || {};
+    const doc = d.documento || d;
+    if (doc.folio != null && doc.concepto != null) { memoria.set("concepto", String(doc.concepto)); memoria.set("serie", doc.serie ? String(doc.serie) : "-"); memoria.set("folio", String(doc.folio)); }
+  } catch { /* respuesta de texto */ }
+  if (metodo === "POST" && /\/(clientes|productos)$/.test(ruta)) {
+    try { const c = JSON.parse(cuerpoTexto); if (c.codigo) memoria.set("codigo", c.codigo); } catch { /* sin cuerpo */ }
+  }
+}
+
+function vistaResultado(res) {
+  const bien = res.estado >= 200 && res.estado < 300;
+  const cuerpo = res.blob
+    ? h("div", null, h("p", { class: "nota" }, res.datos), h("button", { class: "boton suave chico", onclick: () => { const a = h("a", { href: URL.createObjectURL(res.blob), download: "documento.pdf" }); document.body.append(a); a.click(); a.remove(); } }, "Descargar PDF"))
+    : h("pre", null, res.datos.length > 20000 ? res.datos.slice(0, 20000) + "\n… (recortado)" : res.datos || "(sin contenido)");
+  return h("div", { class: "resultado" },
+    h("p", { class: "mono" }, h("b", { class: bien ? "estado-Completada" : res.estado === 202 ? "estado-EnProceso" : "estado-Fallida" }, res.estado), `  ${res.ms} ms`, res.ubicacion ? `  ·  seguir en ${res.ubicacion}` : ""),
+    cuerpo);
+}
+
+/** Una petición lista para lanzar: parámetros de ruta, cuerpo editable y resultado. */
+function consola({ metodo, ruta, op }) {
+  const campos = {};
+  const params = parametrosRuta(ruta);
+  const filaParams = params.length ? h("div", { class: "dos" }, params.map((p) => {
+    const i = h("input", { value: memoria.get(p) || (p === "empresa" ? memoria.get("empresa") || "" : ""), "aria-label": p, spellcheck: "false" });
+    campos[p] = i;
+    return h("label", { class: "campo" }, h("span", null, p), i);
+  })) : null;
+  const ej = ejemploDe(op);
+  const area = ej ? h("textarea", { spellcheck: "false", "aria-label": "Cuerpo de la petición" }) : null;
+  if (area) area.value = paraEmpresa(JSON.stringify(ej, null, 2));
+  const llave = metodo === "POST" ? h("input", { placeholder: "Idempotency-Key (opcional)", "aria-label": "Idempotency-Key" }) : null;
+  const salida = h("div");
+  const boton = h("button", { class: "boton" }, "Lanzar");
+  const destino = () => ruta.replace(/\{([^}]+)\}/g, (_, p) => encodeURIComponent((campos[p] && campos[p].value.trim()) || "{" + p + "}"));
+
+  boton.addEventListener("click", async () => {
+    const url = destino();
+    if (/\{[^}]+\}/.test(url)) { aviso("Complete los parámetros de la ruta."); return; }
+    if (area) { try { JSON.parse(area.value); } catch { aviso("El cuerpo no es un JSON válido."); return; } }
+    boton.disabled = true; salida.replaceChildren(h("p", { class: "nota" }, "Enviando…"));
+    try {
+      const cab = llave && llave.value.trim() ? { "Idempotency-Key": llave.value.trim() } : {};
+      const res = await enviar(metodo, url, area ? area.value : null, { cabeceras: cab });
+      recordar(metodo, url, area ? area.value : "", res);
+      salida.replaceChildren(vistaResultado(res));
+    } catch (e) { salida.replaceChildren(h("p", { class: "err" }, "No se pudo enviar: " + e.message)); }
+    boton.disabled = false;
+  });
+
+  return h("div", { class: "consola" },
+    h("p", { class: "mono" }, h("b", null, metodo), "  ", ruta),
+    filaParams, area ? h("label", { class: "campo" }, h("span", null, "Cuerpo (JSON)"), area) : null,
+    h("div", { class: "fila-acciones" }, boton, llave ? h("label", { class: "campo", style: "margin:0;flex:0 1 280px" }, llave) : null),
+    salida);
+}
+
+/** Tarjeta de sesión: usa la sesión del portal o cambia una llave de API por un token. */
+function tarjetaSesion() {
+  const estado = h("p", { class: "sub" });
+  const llave = h("input", { type: "password", placeholder: "Llave de API (ak_…)", autocomplete: "off", "aria-label": "Llave de API" });
+  const mostrar = () => {
+    estado.textContent = memoria.get("token")
+      ? "Usando el token obtenido con su llave de API (dura una hora)."
+      : "Usando su sesión del portal. Las peticiones se firman solas.";
+  };
+  const obtener = h("button", { class: "boton" }, "Obtener token");
+  obtener.addEventListener("click", async () => {
+    obtener.disabled = true;
+    try {
+      const r = await fetch("/api/auth/token", { method: "POST", headers: { "x-api-key": llave.value.trim() } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error("La llave no es válida o fue revocada.");
+      memoria.set("token", j.token); llave.value = ""; mostrar(); aviso("Token listo");
+    } catch (e) { aviso(e.message); }
+    obtener.disabled = false;
+  });
+  const sesionPortal = h("button", { class: "boton suave", onclick: () => { memoria.borrar("token"); mostrar(); } }, "Usar mi sesión del portal");
+  mostrar();
+  return h("div", { class: "tarjeta" }, h("h2", null, "Sesión"), estado,
+    h("div", { class: "fila-acciones" }, h("label", { class: "campo", style: "margin:0" }, llave), obtener, sesionPortal));
+}
+
+// ---------------------------------------------------------------- desarrolladores
+
 function curlDe(base, metodo, ruta, op) {
-  const url = base + ruta.replace(/\{[^}]+\}/g, (x) => x.replace(/[{}]/g, "").toUpperCase());
-  const cuerpo = op.requestBody && op.requestBody.content && op.requestBody.content["application/json"] && op.requestBody.content["application/json"].example;
-  const lineas = [`curl -X ${metodo.toUpperCase()} "${url}"`, `  -H "Authorization: Bearer $LLAVE"`];
+  const url = base + ruta.replace(/\{([^}]+)\}/g, (_, x) => x.toUpperCase());
+  const cuerpo = ejemploDe(op);
+  const lineas = [`curl -X ${metodo} "${url}"`, `  -H "Authorization: Bearer $LLAVE"`];
   if (cuerpo) { lineas.push(`  -H "Content-Type: application/json"`); lineas.push(`  -d '${JSON.stringify(cuerpo)}'`); }
   return lineas.join(" \\\n");
 }
@@ -289,103 +444,178 @@ function vistaDevs(raiz) {
   const catalogo = h("div");
   const bloque = (titulo, texto) => h("div", { style: "margin-top:10px" }, h("div", { class: "etiqueta" }, titulo), h("div", { class: "copiable" }, h("code", null, texto), h("button", { class: "boton suave chico", onclick: () => copiar(texto) }, "Copiar")));
   raiz.append(
-    encabezado("Desarrolladores", "Acusa Central es una API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial. Cada proceso es un recurso: clientes, productos y documentos, con su timbrado, sus archivos y su cancelación."),
+    encabezado("Desarrolladores", "API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial."),
     h("div", { class: "tarjeta" }, h("h2", null, "Cómo se usa"),
-      h("p", { class: "sub" }, "Documentación interactiva con probador: ", h("a", { href: "/api-docs/", target: "_blank" }, "/api-docs"), " · Definición OpenAPI: ", h("a", { href: "/api-docs/openapi.yaml", target: "_blank" }, "openapi.yaml"), "."),
+      h("p", { class: "sub" }, "Documentación interactiva: ", h("a", { href: "/api-docs/", target: "_blank" }, "/api-docs"), " · Definición OpenAPI: ", h("a", { href: "/api-docs/openapi.yaml", target: "_blank" }, "openapi.yaml"), "."),
       bloque("Dirección base", base),
       bloque("Autenticación", "Authorization: Bearer <llave de API ak_…>"),
       bloque("Flujo de una factura", "POST /clientes  →  POST /productos  →  POST /documentos  →  POST /documentos/{concepto}/{serie}/{folio}/timbrado  →  GET …/xml   (todo bajo /api/empresas/{empresa})"),
       bloque("Respuesta de timbrado", `{ "uuid": "…", "estado": "timbrada", "xml": "<cfdi:Comprobante …>" }`),
-      h("p", { class: "nota", style: "margin-top:10px" }, "Cada petición espera al worker hasta 60 s; si no responde, la respuesta es 202 con la tarea. Los errores de validación responden 422 con { \"errors\": [ … ] }. En la sección Probar puede correr la cadena completa con un botón.")),
+      h("p", { class: "nota", style: "margin-top:10px" }, "Cada petición espera al worker hasta 60 s; si no responde, la respuesta es 202 con la tarea. Los errores de validación responden 422 con { \"errors\": [ … ] }.")),
+    tarjetaSesion(),
     catalogo);
 
-  fetch("/api-docs/openapi.json").then((r) => r.json()).then((spec) => {
+  cargarSpec().then((spec) => {
     const grupos = new Map();
-    for (const [ruta, item] of Object.entries(spec.paths)) {
-      for (const [metodo, op] of Object.entries(item)) {
-        if (!["get", "post", "put", "patch", "delete"].includes(metodo)) continue;
-        const tag = (op.tags && op.tags[0]) || "Otras";
-        if (!grupos.has(tag)) grupos.set(tag, []);
-        grupos.get(tag).push({ metodo, ruta, op });
-      }
-    }
-
-    catalogo.replaceChildren(...[...grupos.entries()].map(([tag, rutas]) => h("div", { class: "tarjeta" }, h("h2", null, tag),
-      tabla(["Método", "Ruta", "Qué hace", "Ejemplo"], rutas.map(({ metodo, ruta, op }) => {
+    for (const o of operaciones(spec)) { if (!grupos.has(o.tag)) grupos.set(o.tag, []); grupos.get(o.tag).push(o); }
+    catalogo.replaceChildren(...[...grupos.entries()].map(([tag, ops]) => h("div", { class: "tarjeta" }, h("h2", null, tag),
+      ...ops.map(({ metodo, ruta, op }) => {
         const c = curlDe(base, metodo, ruta, op);
-        return h("tr", null, h("td", { class: "mono" }, metodo.toUpperCase()), h("td", { class: "mono" }, ruta), h("td", null, op.summary || ""),
-          h("td", null, h("details", null, h("summary", null, "Ver"), h("pre", null, c), h("button", { class: "boton suave chico", onclick: () => copiar(c) }, "Copiar"))));
-      })))));
+        const panel = h("div", { hidden: true, style: "margin:8px 0 12px" });
+        const verCurl = h("details", null, h("summary", null, "curl"), h("pre", null, c), h("button", { class: "boton suave chico", onclick: () => copiar(c) }, "Copiar"));
+        const lanzar = h("button", { class: "boton chico", onclick: () => { if (panel.hidden && !panel.firstChild) panel.append(consola({ metodo, ruta, op })); panel.hidden = !panel.hidden; lanzar.textContent = panel.hidden ? "Lanzar" : "Cerrar"; } }, "Lanzar");
+        return h("div", { class: "factura" }, h("div", { class: "fila-acciones", style: "align-items:center" },
+          h("span", { class: "mono", style: "min-width:64px;font-weight:700" }, metodo), h("span", { class: "mono", style: "flex:1 1 320px" }, ruta), h("span", { style: "flex:1 1 220px" }, op.summary || ""), lanzar),
+          verCurl, panel);
+      }))));
   }).catch(falla(catalogo));
 }
 
-// ---------------------------------------------------------------- probar (cadena de peticiones REST)
+// ---------------------------------------------------------------- probar
+
+const SECCIONES = [
+  { id: "clientes", titulo: "Clientes", descripcion: "Alta, consulta y actualización de clientes y sus direcciones.", filtro: (o) => o.tag === "Clientes" },
+  { id: "productos", titulo: "Productos", descripcion: "Alta, consulta y actualización de productos y servicios.", filtro: (o) => o.tag === "Productos" },
+  { id: "facturas", titulo: "Facturas", descripcion: "Creación y consulta de documentos, individuales o por lote.", filtro: (o) => o.tag === "Documentos" && !/timbrado|xml|pdf|cancelacion/.test(o.ruta) },
+  { id: "timbrado", titulo: "Timbrado y archivos", descripcion: "Timbrado con XML en texto plano, XML y PDF.", filtro: (o) => o.tag === "Documentos" && /timbrado|xml|pdf/.test(o.ruta) },
+  { id: "cancelacion", titulo: "Cancelación", descripcion: "Cancelación de documentos timbrados, individual o por lote.", filtro: (o) => o.tag === "Documentos" && /cancelacion/.test(o.ruta) },
+  { id: "flujo", titulo: "Flujo completo", descripcion: "Cliente, producto, factura, timbrado, XML y cancelación en una sola corrida." },
+  { id: "postman", titulo: "Colección de Postman", descripcion: "Cargue una colección y ejecute sus peticiones aquí." },
+];
 
 function vistaProbar(raiz) {
-  const empresaSel = h("select", { "aria-label": "Empresa de pruebas" });
-  const cancelar = h("input", { type: "checkbox", id: "chk-cancelar" });
-  const salida = h("div", null, h("div", { class: "tarjeta" }, h("div", { class: "vacio" }, h("b", null, "Todavía no se ha corrido"), "Elija la empresa de pruebas y pulse «Correr la cadena».")));
-  const boton = h("button", { class: "boton", id: "boton-cadena" }, "Correr la cadena");
+  const empresaSel = h("select", { "aria-label": "Empresa" });
+  const cuerpo = h("div");
+  const pestanas = h("div", { class: "pestanas", role: "tablist" });
+  let actual = SECCIONES[0].id;
   raiz.append(
-    encabezado("Probar", "Corre en cadena las peticiones de una factura de $1 (cliente, producto, documento, timbrado, XML y cancelación) y muestra cada respuesta, como una colección de Postman. Necesita un worker en línea y una empresa de pruebas; el timbrado gasta un timbre del PAC."),
-    h("div", { class: "tarjeta" },
-      h("div", { class: "fila-acciones" }, h("label", { class: "campo" }, h("span", null, "Empresa de pruebas"), empresaSel),
-        h("label", { class: "campo", for: "chk-cancelar", style: "flex-direction:row;gap:8px;align-items:center" }, cancelar, h("span", null, "Cancelar la factura al final (motivo 02)")), boton)),
-    salida);
-  api("/api/portal/empresas").then((es) => {
-    empresaSel.replaceChildren(...es.map((e) => h("option", { value: e }, e)));
-    const prueba = es.find((e) => /PRUEBA/i.test(e)); if (prueba) empresaSel.value = prueba;
-  }).catch(() => {});
+    encabezado("Probar", "Ejecute las peticiones de la API sobre una empresa de CONTPAQi.", h("label", { class: "campo", style: "margin:0;min-width:240px" }, h("span", null, "Empresa"), empresaSel)),
+    h("div", { class: "tarjeta", style: "padding:8px 10px" }, pestanas), cuerpo);
 
-  async function llamar(metodo, ruta, cuerpo) {
-    const r = await fetch(ruta, { method: metodo, headers: { "Content-Type": "application/json", Authorization: "Bearer " + sesion.token }, body: cuerpo ? JSON.stringify(cuerpo) : undefined });
-    const texto = await r.text();
-    let datos = texto; try { datos = JSON.parse(texto); } catch { /* respuesta de texto, como el XML */ }
-    return { estado: r.status, datos };
+  const pintarPestanas = () => pestanas.replaceChildren(...SECCIONES.map((s) => h("button", { role: "tab", "aria-selected": String(s.id === actual), onclick: () => { actual = s.id; pintarPestanas(); mostrar(); } }, s.titulo)));
+
+  async function mostrar() {
+    const s = SECCIONES.find((x) => x.id === actual);
+    cuerpo.replaceChildren(h("p", { class: "sub" }, s.descripcion));
+    if (s.id === "flujo") { cuerpo.append(flujoCompleto()); return; }
+    if (s.id === "postman") { cuerpo.append(importadorPostman()); return; }
+    try {
+      const spec = await cargarSpec();
+      cuerpo.append(tarjetaSesion(), ...operaciones(spec).filter(s.filtro).map((o) => h("div", { class: "tarjeta" }, h("h2", null, o.op.summary || o.ruta), o.op.description ? h("p", { class: "sub" }, o.op.description) : null, consola(o))));
+    } catch (e) { falla(cuerpo)(e); }
   }
 
+  api("/api/portal/empresas").then((es) => {
+    empresaSel.replaceChildren(...es.map((e) => h("option", { value: e }, e)));
+    const guardada = memoria.get("empresa");
+    empresaSel.value = es.includes(guardada) ? guardada : (es.find((e) => /PRUEBA/i.test(e)) || es[0] || "");
+    memoria.set("empresa", empresaSel.value);
+    empresaSel.addEventListener("change", () => { memoria.set("empresa", empresaSel.value); mostrar(); });
+    pintarPestanas(); mostrar();
+  }).catch(falla(cuerpo));
+}
+
+/** Cliente, producto, documento, timbrado, XML y cancelación, con la respuesta de cada paso. */
+function flujoCompleto() {
+  const cancelar = h("input", { type: "checkbox", id: "chk-cancelar" });
+  const salida = h("div");
+  const boton = h("button", { class: "boton" }, "Correr el flujo");
   boton.addEventListener("click", async () => {
-    const empresa = empresaSel.value;
+    const empresa = memoria.get("empresa");
     if (!empresa) { aviso("Registre una empresa en Configuración."); return; }
     if (!/PRUEBA/i.test(empresa) && !confirm(`La empresa «${empresa}» no parece de pruebas. Timbrar gasta timbres reales. ¿Continuar?`)) return;
-    boton.disabled = true;
-    salida.replaceChildren();
+    boton.disabled = true; salida.replaceChildren();
     const ctx = {};
     const hoy = new Date().toISOString().slice(0, 10);
     const sufijo = String(Date.now()).slice(-6);
     const E = `/api/empresas/${encodeURIComponent(empresa)}`;
     const D = () => `${E}/documentos/${ctx.concepto}/${ctx.serie || "-"}/${ctx.folio}`;
+    const llamar = async (m, ruta, c) => { const r = await enviar(m, ruta, c ? JSON.stringify(c) : null); recordar(m, ruta, c ? JSON.stringify(c) : "", r); return { ...r, ruta: `${m} ${ruta}` }; };
     const pasos = [
-      ["Cliente", async () => { const r = await llamar("POST", `${E}/clientes`, { codigo: "PRUEBACL" + sufijo, razonSocial: "PRUEBA CLIENTE SA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000 }); ctx.cliente = "PRUEBACL" + sufijo; return { ...r, ruta: `POST ${E}/clientes` }; }],
-      ["Producto de $1", async () => { const r = await llamar("POST", `${E}/productos`, { codigo: "PRUEBAPR" + sufijo, nombre: "PRUEBA SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); ctx.producto = "PRUEBAPR" + sufijo; return { ...r, ruta: `POST ${E}/productos` }; }],
-      ["Documento (sin timbrar)", async () => {
+      ["Cliente", async () => { ctx.cliente = "PRUEBACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "PRUEBA CLIENTE SA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000 }); }],
+      ["Producto de $1", async () => { ctx.producto = "PRUEBAPR" + sufijo; return llamar("POST", `${E}/productos`, { codigo: ctx.producto, nombre: "PRUEBA SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); }],
+      ["Documento", async () => {
         const r = await llamar("POST", `${E}/documentos`, { concepto: "5", serie: "PRUEBA", clienteCodigo: ctx.cliente, referencia: "PRUEBAFAC" + sufijo, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }] });
-        const d = r.datos && r.datos.resultado; if (d) { ctx.concepto = d.concepto; ctx.serie = d.serie; ctx.folio = d.folio; }
-        return { ...r, ruta: `POST ${E}/documentos` };
+        try { const d = JSON.parse(r.datos).resultado; ctx.concepto = d.concepto; ctx.serie = d.serie; ctx.folio = d.folio; } catch { /* el siguiente paso no se corre */ }
+        return r;
       }],
-      ["Timbrado (devuelve el XML en texto plano)", async () => { const r = await llamar("POST", D() + "/timbrado"); return { ...r, ruta: "POST " + D() + "/timbrado" }; }],
-      ["XML del documento", async () => { const r = await llamar("GET", D() + "/xml"); return { ...r, ruta: "GET " + D() + "/xml" }; }],
+      ["Timbrado (XML en texto plano)", () => llamar("POST", D() + "/timbrado")],
+      ["XML del documento", () => llamar("GET", D() + "/xml")],
     ];
-    if (cancelar.checked) pasos.push(["Cancelación (motivo 02)", async () => { const r = await llamar("POST", D() + "/cancelacion", { motivo: "02" }); return { ...r, ruta: "POST " + D() + "/cancelacion" }; }]);
+    if (cancelar.checked) pasos.push(["Cancelación (motivo 02)", () => llamar("POST", D() + "/cancelacion", { motivo: "02" })]);
 
     let fallo = false;
     for (let i = 0; i < pasos.length && !fallo; i++) {
       const [titulo, correr] = pasos[i];
-      const fila = h("div", { class: "tarjeta" }, h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "sub" }, "Corriendo…"));
+      const fila = h("div", { class: "tarjeta" }, h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "sub" }, "Enviando…"));
       salida.append(fila);
       try {
         const r = await correr();
-        const bien = r.estado >= 200 && r.estado < 300;
-        let texto = typeof r.datos === "string" ? r.datos : json(r.datos);
-        if (texto.length > 6000) texto = texto.slice(0, 6000) + "\n… (recortado)";
-        fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "mono" }, r.ruta, " → ", h("b", { class: bien ? "estado-Completada" : "estado-Fallida" }, r.estado)), h("pre", null, texto));
-        if (!bien) fallo = true;
-        else if (r.datos && r.datos.xml) fila.append(h("p", { class: "nota" }, "El campo xml llegó en texto plano (" + r.datos.xml.length + " caracteres)."));
-      } catch (e) { fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "estado-Fallida" }, "Error: " + e.message)); fallo = true; }
+        fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "mono" }, r.ruta), vistaResultado(r));
+        if (r.estado < 200 || r.estado >= 300) fallo = true;
+      } catch (e) { fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "err" }, "No se pudo enviar: " + e.message)); fallo = true; }
     }
-    salida.append(h("div", { class: "tarjeta" }, h("b", null, fallo ? "La cadena se detuvo en el paso que falló." : "Cadena completa.")));
+    salida.append(h("div", { class: "tarjeta" }, h("b", null, fallo ? "El flujo se detuvo en el paso que falló." : "Flujo completo.")));
     boton.disabled = false;
   });
+  return h("div", null,
+    h("div", { class: "tarjeta" }, h("div", { class: "fila-acciones", style: "align-items:center" }, boton,
+      h("label", { for: "chk-cancelar", style: "display:flex;gap:8px;align-items:center" }, cancelar, "Cancelar la factura al final (motivo 02)")),
+      h("p", { class: "nota" }, "Factura de $1 más IVA. El timbrado gasta un timbre del PAC.")),
+    salida);
+}
+
+/** Carga una colección de Postman (v2.x) y ejecuta sus peticiones contra este servidor. Los scripts de la colección no se ejecutan. */
+function importadorPostman() {
+  const zona = h("div");
+  const archivo = h("input", { type: "file", accept: ".json,application/json", "aria-label": "Colección de Postman" });
+  archivo.addEventListener("change", async () => {
+    const f = archivo.files && archivo.files[0];
+    if (!f) return;
+    try { pintar(JSON.parse(await f.text())); } catch { zona.replaceChildren(h("p", { class: "err" }, "El archivo no es una colección de Postman válida.")); }
+  });
+
+  function aplanar(items, ruta = []) {
+    return (items || []).flatMap((it) => it.item ? aplanar(it.item, [...ruta, it.name]) : [{ ...it, carpeta: ruta.join(" / ") }]);
+  }
+
+  function pintar(col) {
+    const vars = {};
+    for (const v of col.variable || []) vars[v.key] = v.value ?? "";
+    vars.base_url ??= location.origin;
+    const entradas = {};
+    const tarjetaVars = h("div", { class: "tarjeta" }, h("h2", null, "Variables"), h("p", { class: "sub" }, "Se sustituyen en las rutas, las cabeceras y los cuerpos como {{variable}}."),
+      h("div", { class: "dos" }, Object.keys(vars).map((k) => { const i = h("input", { value: vars[k], "aria-label": k, spellcheck: "false" }); entradas[k] = i; return h("label", { class: "campo" }, h("span", null, k), i); })));
+    const sustituir = (t) => String(t ?? "").replace(/\{\{([^}]+)\}\}/g, (_, k) => (entradas[k.trim()] ? entradas[k.trim()].value : "{{" + k + "}}"));
+    const peticiones = aplanar(col.item);
+    const filas = peticiones.map((p) => {
+      const req = p.request || {};
+      const metodo = (req.method || "GET").toUpperCase();
+      const urlCruda = typeof req.url === "string" ? req.url : (req.url && req.url.raw) || "";
+      const salida = h("div");
+      const lanzar = async () => {
+        let url = sustituir(urlCruda).trim();
+        const origen = location.origin;
+        if (url.startsWith(origen)) url = url.slice(origen.length);
+        if (!url.startsWith("/")) { salida.replaceChildren(h("p", { class: "err" }, "Solo se envían peticiones a este servidor (" + origen + ").")); return { estado: 0 }; }
+        const cab = {};
+        for (const c of req.header || []) { if (!c.disabled && !/^authorization$/i.test(c.key)) cab[c.key] = sustituir(c.value); }
+        const crudo = req.body && req.body.mode === "raw" ? sustituir(req.body.raw) : null;
+        salida.replaceChildren(h("p", { class: "nota" }, "Enviando…"));
+        try { const r = await enviar(metodo, url, crudo, { cabeceras: cab }); recordar(metodo, url, crudo || "", r); salida.replaceChildren(vistaResultado(r)); return r; }
+        catch (e) { salida.replaceChildren(h("p", { class: "err" }, "No se pudo enviar: " + e.message)); return { estado: 0 }; }
+      };
+      const boton = h("button", { class: "boton chico", onclick: lanzar }, "Lanzar");
+      return { lanzar, nodo: h("div", { class: "factura" }, h("div", { class: "fila-acciones", style: "align-items:center" },
+        h("span", { class: "mono", style: "min-width:64px;font-weight:700" }, metodo), h("span", { style: "flex:1 1 300px" }, (p.carpeta ? p.carpeta + " · " : "") + p.name), boton), h("p", { class: "mono nota" }, urlCruda), salida) };
+    });
+    const todo = h("button", { class: "boton", onclick: async () => { todo.disabled = true; for (const f of filas) { const r = await f.lanzar(); if (r.estado < 200 || r.estado >= 300) break; } todo.disabled = false; } }, "Ejecutar todo en orden");
+    zona.replaceChildren(
+      h("div", { class: "tarjeta" }, h("h2", null, col.info && col.info.name || "Colección"), h("p", { class: "nota" }, `${peticiones.length} peticiones. Los scripts de prueba de la colección no se ejecutan.`), todo),
+      tarjetaVars, h("div", { class: "tarjeta" }, filas.map((f) => f.nodo)));
+  }
+
+  return h("div", null, tarjetaSesion(), h("div", { class: "tarjeta" }, h("h2", null, "Colección"), h("p", { class: "sub" }, "Archivo .json exportado de Postman (Collection v2.1)."), archivo), zona);
 }
 
 // ---------------------------------------------------------------- configuración

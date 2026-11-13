@@ -3,7 +3,7 @@ info:
   title: Acusa · API de facturación
   version: v1
   description: |
-    API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial. Cada proceso es un recurso: clientes, productos y documentos, con su timbrado, sus archivos y su cancelación. La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.
+    API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial. Cada proceso es un recurso: clientes (con sus direcciones), productos y documentos, con su timbrado individual o por lote, sus archivos y su cancelación. La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.
 
     **Autenticación.** Envíe su llave de API (empieza con `ak_`) en la cabecera `Authorization: Bearer <llave>`. También puede cambiarla por un token de una hora con `POST /api/auth/token` (cabecera `x-api-key`). Para probar aquí, pegue la llave arriba y pulse «Obtener token».
 
@@ -104,6 +104,44 @@ paths:
         '401': { $ref: '#/components/responses/NoAutorizado' }
         '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
         '422': { $ref: '#/components/responses/Fallo' }
+  /api/empresas/{empresa}/clientes/{codigo}/direcciones:
+    parameters:
+    - $ref: '#/components/parameters/empresa'
+    - $ref: '#/components/parameters/codigo'
+    post:
+      tags: [Clientes]
+      summary: Guardar la dirección de un cliente
+      description: Crea o actualiza la dirección fiscal (`tipo` 0 o `fiscal`) o de envío (`tipo` 1 o `envio`) del cliente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Direccion' }
+            example: { tipo: fiscal, calle: Av. Reforma, numeroExterior: '100', colonia: Juárez, codigoPostal: '06600', municipio: Cuauhtémoc, ciudad: Ciudad de México, estado: CDMX, pais: México }
+      responses:
+        '201': { $ref: '#/components/responses/Resultado' }
+        '202': { $ref: '#/components/responses/EnCurso' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
+        '422': { $ref: '#/components/responses/Fallo' }
+  /api/empresas/{empresa}/clientes/{codigo}/direcciones/{tipo}:
+    parameters:
+    - $ref: '#/components/parameters/empresa'
+    - $ref: '#/components/parameters/codigo'
+    - name: tipo
+      in: path
+      required: true
+      schema: { type: string, enum: [fiscal, envio] }
+      description: Tipo de dirección.
+    get:
+      tags: [Clientes]
+      summary: Consultar la dirección de un cliente
+      responses:
+        '200': { $ref: '#/components/responses/Resultado' }
+        '202': { $ref: '#/components/responses/EnCurso' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
+        '422': { $ref: '#/components/responses/Fallo' }
   /api/empresas/{empresa}/productos:
     parameters:
     - $ref: '#/components/parameters/empresa'
@@ -129,6 +167,21 @@ paths:
     get:
       tags: [Productos]
       summary: Consultar un producto
+      responses:
+        '200': { $ref: '#/components/responses/Resultado' }
+        '202': { $ref: '#/components/responses/EnCurso' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
+        '422': { $ref: '#/components/responses/Fallo' }
+    patch:
+      tags: [Productos]
+      summary: Actualizar un producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductoCambios' }
+            example: { nombre: Renta de servidor, precio1: 2500, descripcion: Renta mensual de servidor, claveSat: '81112200' }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
         '202': { $ref: '#/components/responses/EnCurso' }
@@ -163,6 +216,59 @@ paths:
               - { productoCodigo: SERV0001, unidades: 2, precio: 2000, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }
       responses:
         '201': { $ref: '#/components/responses/Resultado' }
+        '202': { $ref: '#/components/responses/EnCurso' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
+        '422': { $ref: '#/components/responses/Fallo' }
+  /api/empresas/{empresa}/documentos/timbrado:
+    parameters:
+    - $ref: '#/components/parameters/empresa'
+    post:
+      tags: [Documentos]
+      summary: Timbrar varios documentos en una sola orden
+      description: Hasta 25 documentos. El worker los timbra de uno en uno (cada timbrado tarda de 5 a 10 segundos) y la respuesta detalla el resultado de cada uno; si pasan 60 segundos responde `202` y el detalle se consulta en la tarea.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Lote' }
+            example: { documentos: [ { concepto: '5', serie: A, folio: 1 }, { concepto: '5', serie: A, folio: 2 } ] }
+      responses:
+        '200': { $ref: '#/components/responses/Resultado' }
+        '202': { $ref: '#/components/responses/EnCurso' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
+        '422': { $ref: '#/components/responses/Fallo' }
+  /api/empresas/{empresa}/documentos/cancelacion:
+    parameters:
+    - $ref: '#/components/parameters/empresa'
+    post:
+      tags: [Documentos]
+      summary: Cancelar varios documentos en una sola orden
+      description: Hasta 25 documentos, cada uno con su motivo (01 a 04; el 01 requiere `uuidSustituto`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Lote' }
+            example: { documentos: [ { concepto: '5', serie: A, folio: 1, motivo: '02' }, { concepto: '5', serie: A, folio: 2, motivo: '02' } ] }
+      responses:
+        '200': { $ref: '#/components/responses/Resultado' }
+        '202': { $ref: '#/components/responses/EnCurso' }
+        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
+        '422': { $ref: '#/components/responses/Fallo' }
+  /api/empresas/{empresa}/documentos/{concepto}/{serie}/{folio}:
+    parameters:
+    - $ref: '#/components/parameters/empresa'
+    - $ref: '#/components/parameters/concepto'
+    - $ref: '#/components/parameters/serie'
+    - $ref: '#/components/parameters/folio'
+    get:
+      tags: [Documentos]
+      summary: Consultar un documento
+      responses:
+        '200': { $ref: '#/components/responses/Resultado' }
         '202': { $ref: '#/components/responses/EnCurso' }
         '401': { $ref: '#/components/responses/NoAutorizado' }
         '404': { $ref: '#/components/responses/EmpresaNoRegistrada' }
@@ -402,6 +508,45 @@ components:
         ivaPorcentaje: { type: number, minimum: 0, maximum: 100, example: 16 }
         retencionIvaPorcentaje: { type: number, minimum: 0, maximum: 100 }
         iepsPorcentaje: { type: number, minimum: 0, maximum: 100 }
+    Direccion:
+      type: object
+      required: [codigoPostal]
+      properties:
+        tipo: { type: string, enum: [fiscal, envio], description: Por omisión fiscal }
+        calle: { type: string }
+        numeroExterior: { type: string }
+        numeroInterior: { type: string }
+        colonia: { type: string }
+        codigoPostal: { type: string }
+        municipio: { type: string }
+        ciudad: { type: string }
+        estado: { type: string }
+        pais: { type: string }
+    ProductoCambios:
+      type: object
+      properties:
+        nombre: { type: string }
+        descripcion: { type: string }
+        precio1: { type: number }
+        claveSat: { type: string }
+        textosExtra: { type: array, items: { type: string } }
+    Lote:
+      type: object
+      required: [documentos]
+      properties:
+        documentos:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: object
+            required: [concepto, folio]
+            properties:
+              concepto: { type: string }
+              serie: { type: string, description: Sin serie, omítala o use `-` }
+              folio: { type: integer }
+              motivo: { type: string, enum: ['01', '02', '03', '04'], description: Solo en cancelación }
+              uuidSustituto: { type: string }
     Cancelacion:
       type: object
       required: [motivo]
