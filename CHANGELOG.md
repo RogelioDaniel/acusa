@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 (2026-11-13)
+
+- API REST por recursos bajo `/api/empresas/{empresa}`: clientes (con direcciones), productos, documentos, timbrado individual y por
+  lote, XML, PDF y cancelación. Cada petición espera al worker hasta 60 segundos y admite `Idempotency-Key`.
+- El timbrado devuelve el UUID y el XML en texto plano. Al crear un documento son obligatorios `usoCfdi` y `regimenFiscal`, y cada
+  movimiento admite IVA, retención de IVA e IEPS.
+- Los impuestos del movimiento se escriben con la secuencia del SDK (`fEditarMovimiento`, `fSetDatoMovimiento`, `fGuardaMovimiento`) y
+  los nombres reales de campo (`CPORCENTAJERETENCION1`); antes Comercial los ignoraba y aplicaba los valores por omisión.
+- Documentación OpenAPI en `/api-docs` con ejemplos de cuerpo y modo claro y oscuro. El portal incluye una consola para lanzar
+  peticiones, secciones de prueba y un importador de colecciones de Postman.
+- Cada tarea del portal muestra la petición REST que la originó.
+- Central siembra llaves, empresas y usuarios iniciales desde variables de entorno (varias llaves separadas por coma), para hosting sin
+  disco.
+- El worker es un servicio de Windows: arranca con el servidor, se reinicia si falla y admite una sola instancia por servidor. La
+  configuración y los secretos cifrados viven en `C:\ProgramData\Acusa`; solo el propietario o un administrador pueden cambiarlos.
+- Instalador `AcusaWorker-Setup.exe` que registra el servicio, y asistente de configuración de siete pasos.
+
 ## 1.0.0
 
 - Primera versión de Acusa: Acusa Central (portal y API), Acusa Worker (con panel web), Acusa Worker Desktop y Acusa Programador.

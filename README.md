@@ -1,80 +1,78 @@
-        # Acusa v1.0.0
+# Acusa
 
-Demo inicial de la arquitectura de Acusa: un sistema del cliente manda órdenes de facturación por una API, Acusa Central
-las guarda en una cola y un Acusa Worker, instalado junto a CONTPAQi Comercial, las ejecuta con el SDK y devuelve el resultado.
+API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial. Un sistema del cliente llama a Acusa Central; un
+Acusa Worker, instalado en el servidor de Comercial, ejecuta cada petición con el SDK de CONTPAQi y devuelve el resultado.
 
 ```
-Sistema del cliente  ->  Acusa Central (portal + API + cola)  <-  Acusa Worker  ->  CONTPAQi Comercial
-        (Programador)          127.0.0.1:5090                     panel :5095        SDK de 32 bits
+Sistema del cliente  ->  Acusa Central (API REST + portal + cola)  <-  Acusa Worker (servicio de Windows)  ->  CONTPAQi Comercial
 ```
 
-El worker siempre consulta a Central; Central nunca abre una conexión hacia el servidor del cliente.
+El worker siempre consulta a Central: Central nunca abre una conexión hacia el servidor del cliente.
 
-## Componentes
+## Capas
 
-| Carpeta | Qué es |
-|---|---|
-| `src\Acusa.Orquestador` | Acusa Central: portal web y API (`127.0.0.1:5090`). |
-| `src\Acusa.Sdk.Worker` | Acusa Worker (win-x86) con panel web local en `127.0.0.1:5095`. |
-| `src\Acusa.Worker.Desktop` | Acusa Worker Desktop (WPF): asistente de configuración del worker. |
-| `src\Acusa.Programador` | Sistema externo de ejemplo en `127.0.0.1:5200`: programaciones, cola de corridas y factura manual. |
-| `src\Acusa.Contrato` | Contrato compartido: operaciones, DTO y catálogo. |
-| `src\Acusa.Sdk.Application`, `src\Acusa.Sdk.Integration.Contpaqi` | Reglas de negocio y acceso al SDK de CONTPAQi. |
-| `tests\Acusa.Sdk.Tests` | Pruebas. |
+| Proyecto | Capa | Qué contiene |
+|---|---|---|
+| `src/Acusa.Orquestador` | API | Acusa Central: API REST, cola de tareas, portal web y documentación OpenAPI. |
+| `src/Acusa.Contrato` | Contrato | Operaciones, DTO y reglas compartidas entre Central y el worker. |
+| `src/Acusa.Sdk.Application` | Aplicación | Reglas de negocio de clientes, productos y documentos, y la política de escritura. |
+| `src/Acusa.Sdk.Integration.Contpaqi` | Integración con CONTPAQi | Llamadas nativas al SDK (`MGWServicios.dll`, 32 bits), con su traza. |
+| `src/Acusa.Sdk.Worker` | Worker | Servicio que toma tareas de Central y las ejecuta con el SDK. |
+| `src/Acusa.Worker.Desktop` | Aplicación de escritorio | Asistente de configuración y panel del servicio del worker. |
+| `src/Acusa.Programador` | Ejemplo | Sistema externo de ejemplo que consume la API. |
+| `tests/Acusa.Sdk.Tests` | Pruebas | Pruebas unitarias y de integración sin CONTPAQi. |
 
-## Cómo arrancar
+## Compilar y probar
 
-Requisitos para compilar: .NET SDK 10. Para operar contra CONTPAQi: Windows con Comercial Premium 12.2.1.
+Requisitos: .NET SDK 10. Para operar contra CONTPAQi: Windows con Comercial Premium 12.2.1.
 
 ```powershell
 dotnet build Acusa.Sdk.slnx
-dotnet test
+dotnet test Acusa.Sdk.slnx
 ```
 
-En el servidor, con el contenido de `Acusa-v1.zip` descomprimido (carpetas `orquestador\`, `worker\`, `programador\`, `desktop\`):
+## API
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\demo-servidor.ps1 -Empresa adEMPRESA_DE_PRUEBA -Programador          # contra CONTPAQi
-powershell -ExecutionPolicy Bypass -File .\demo-servidor.ps1 -Simulado -Programador                             # sin CONTPAQi, datos en memoria
-```
+La definición completa está en `src/Acusa.Orquestador/wwwroot/api-docs/openapi.yaml` y se publica con Swagger UI en `/api-docs`.
+La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.
 
-El script imprime la dirección del portal, el usuario y una contraseña generada en cada arranque. Opciones de escritura:
-`-Documentos` (crear documentos) y `-Timbrado` (timbrar y cancelar); ambas solo con registros PRUEBA. Detalle en la cabecera del script.
+| Recurso | Rutas |
+|---|---|
+| Clientes | `POST …/clientes`, `GET` y `PATCH …/clientes/{codigo}`, `POST` y `GET …/clientes/{codigo}/direcciones` |
+| Productos | `POST …/productos`, `GET` y `PATCH …/productos/{codigo}` |
+| Documentos | `POST …/documentos`, `GET …/documentos/{concepto}/{serie}/{folio}` |
+| Timbrado | `POST …/documentos/{concepto}/{serie}/{folio}/timbrado` (devuelve el UUID y el XML en texto plano), `POST …/documentos/timbrado` (lote de hasta 25) |
+| Archivos | `GET …/{concepto}/{serie}/{folio}/xml` y `…/pdf` |
+| Cancelación | `POST …/{concepto}/{serie}/{folio}/cancelacion`, `POST …/documentos/cancelacion` (lote) |
 
-Publicación (los ejecutables salen de aquí): orquestador, programador y desktop con
-`dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true`; el worker con
-`-r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true`.
+Autenticación: `Authorization: Bearer <llave de API>` (empieza con `ak_`) o un token de `POST /api/auth/token`. Cada petición espera al
+worker hasta 60 segundos: si responde, la misma respuesta trae el resultado; si no, responde `202` con la tarea
+(`GET /api/sdk/tasks/{id}`). Con la cabecera `Idempotency-Key`, repetir una escritura no la duplica. Los errores de validación
+responden `422` con `{ "errors": [ … ] }`.
 
-## API expuesta
+Los impuestos de cada movimiento son `ivaPorcentaje`, `retencionIvaPorcentaje` e `iepsPorcentaje`. `usoCfdi` y `regimenFiscal` son
+obligatorios al crear un documento.
 
-`POST /api/sdk/execute` acepta solo estas nueve operaciones; cualquier otra responde 400:
+## Despliegue
 
-`cliente.crear`, `cliente.leer`, `cliente.actualizar`, `producto.crear`, `producto.leer`, `documento.crear`, `documento.emitir`,
-`documento.obtener-archivo`, `documento.cancelar`.
+**Acusa Central** corre en un contenedor (`deploy/nube/Dockerfile`, ver `deploy/nube/LEEME.md`). Con hosting sin disco, las llaves, las
+empresas y los usuarios iniciales se siembran con variables de entorno (`Orquestador__LlaveWorkerInicial`,
+`Orquestador__LlaveApiInicial`, `Orquestador__EmpresasIniciales`, …); cada una admite varias llaves separadas por coma.
 
-Con `?esperar=60` (o el encabezado `Prefer: wait=60`) la misma respuesta trae el resultado: 200 si se completó, 422 si falló y 202 si
-pasa el tiempo. Con `Idempotency-Key` una orden repetida no se duplica.
+**Acusa Worker** se instala en el servidor de Comercial con `AcusaWorker-Setup.exe`, que registra el servicio de Windows `AcusaWorker`
+(arranque automático, reinicio si falla). El asistente pide la dirección de Central, la cuenta del portal, el usuario del SDK, la llave
+del worker y las empresas. La configuración y los secretos cifrados quedan en `C:\ProgramData\Acusa` y el registro en
+`C:\ProgramData\Acusa\Worker\logs\worker-AAAAMMDD.log`. El instalador se arma con `deploy/instalador/construir-instalador.ps1`.
 
-### Rutas de facturación (las del Swagger de Alain)
+## Seguridad
 
-Central ofrece además, con los mismos caminos, métodos y nombres de campo del Swagger de Alain: `/companies` (con `/addresses`),
-`/products`, `/issuing_companies` (con `/invoices`, `stamps`, `cancelate`, `xml`, `document`), `/movements`,
-`/invoices/batches_stamp` y `POST /users/sessions`. Acusa guarda compañías, productos y facturas (la factura es un borrador hasta
-`stamps`) y manda las órdenes a CONTPAQi por el worker. Fuera, por indicación de Alain: reportes, descargas y usuarios. El
-documento preliminar y la prefactura responden 501, y subir el certificado por API también.
-Configuración en la sección `Orquestador` (`Facturacion*`): empresa por omisión, prefijos de los códigos generados, conceptos y
-unidades que ofrecen los catálogos. Ejemplo ejecutable: `ejemplo-rutas-alain.ps1`.
+- La contraseña del certificado (CSD) y la del SDK nunca viajan en una petición: viven cifradas (DPAPI de la máquina) en el servidor.
+- Las llaves se guardan con hash en Central y se muestran una sola vez.
+- En una empresa de pruebas, el worker exige que los códigos y la referencia empiecen con `PRUEBA`. La escritura y el timbrado se
+  habilitan por empresa.
+- El SDK de CONTPAQi admite un solo proceso a la vez por servidor: por eso hay un único worker, que cambia de empresa según la tarea.
 
-Además: `POST /api/auth/token`, `GET /api/sdk/tasks/{id}`, `GET /api/sdk/tasks`, `GET /api/sdk/workers`, `GET /api/sdk/status`.
-La empresa se indica en `empresa` (o con el alias `dbName`).
+## Contribuir
 
-Flujo mínimo de timbrado: token, `cliente.crear`, `producto.crear`, `documento.crear` (devuelve concepto, serie y folio),
-`documento.emitir`, `documento.obtener-archivo`. La pantalla Desarrolladores del portal lo explica con ejemplos.
-
-## Qué queda fuera de v1
-
-- Operaciones no expuestas por la API (el worker las conserva): `cliente.actualizar`, `producto.actualizar`, `direccion.crear`,
-  `direccion.leer`, `documento.leer`, `documento.emitir.lote`, `documento.cancelar.lote`.
-- Borrado de información: la plataforma no elimina registros contables.
-- Pantalla separada de Empresas: la empresa se registra en Configuración del portal (o la registra el asistente del Worker Desktop).
-- Escritura y timbrado solo sobre empresas y registros de prueba (nombre con `PRUEBA`).
+Ver [CONTRIBUTING.md](CONTRIBUTING.md): convenciones de código, estrategia de ramas y plantilla de pull request. Los cambios del
+proyecto están en [CHANGELOG.md](CHANGELOG.md).
