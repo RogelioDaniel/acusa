@@ -54,6 +54,10 @@ internal static class SdkNative
     [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fAltaDocumento(ref int idDocumento, ref TDocumento documento);
     [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fAltaMovimiento(int idDocumento, ref int idMovimiento, ref TMovimiento movimiento);
     [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fSetDatoMovimiento(string campo, string valor);
+    /// <summary>Pone el movimiento en edición (existe en el SDK que usa Montek: «fEditarMovimiento»).</summary>
+    [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fEditarMovimiento();
+    [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fGuardaMovimiento();
+    [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fCancelaCambiosMovimiento();
     [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fSetDatoDocumento(string campo, string valor);
     [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fGuardaDocumento();
     [DllImport(Dll, CharSet = CharSet.Ansi)] public static extern int fCancelarModificacionDocumento();

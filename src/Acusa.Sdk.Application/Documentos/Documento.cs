@@ -33,7 +33,7 @@ public sealed record Documento(
 /// <param name="Precio">Precio unitario; no puede ser negativo.</param>
 /// <param name="Almacen">Código de almacén; vacío usa el predeterminado del concepto.</param>
 /// <param name="IvaPorcentaje">Porcentaje de IVA (CPORCENTAJEIMPUESTO1). Vacío: no se aplica IVA.</param>
-/// <param name="RetencionIvaPorcentaje">Porcentaje de retención de IVA (CPORCENTAJERETENCION). Vacío: no se aplica.</param>
+/// <param name="RetencionIvaPorcentaje">Porcentaje de retención de IVA (CPORCENTAJERETENCION1). Vacío: no se aplica.</param>
 /// <param name="IepsPorcentaje">Porcentaje de IEPS (CPORCENTAJEIMPUESTO2). Vacío: no se aplica.</param>
 public sealed record NuevaPartida(
     string ProductoCodigo,
