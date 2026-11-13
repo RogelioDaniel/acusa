@@ -164,6 +164,9 @@ public static class FacturacionRutas
     }
 
     /// <summary>Misma comprobación que el resto de Central: token vigente de una llave de API o de una persona del portal.</summary>
+    /// <summary>Misma comprobación para la API REST de Acusa.</summary>
+    internal static Identidad? AutenticarPublico(HttpContext http, Almacen almacen, Seguridad seguridad) => Autenticar(http, almacen, seguridad);
+
     private static Identidad? Autenticar(HttpContext http, Almacen almacen, Seguridad seguridad)
     {
         var cabecera = http.Request.Headers.Authorization.ToString();

@@ -113,9 +113,9 @@ admin.MapPost("/clientes/{clienteId}/usuarios", (string clienteId, SolicitudUsua
     return Results.Created("/admin/usuarios", new { usuarioId = id });
 });
 
-// ---- Rutas de facturación: las del Swagger de Alain (compañías, productos, facturas, partidas) -----------------
+// ---- API REST: los procesos del worker (clientes, productos, documentos, timbrado, archivos, cancelación) -------
 
-Acusa.Orquestador.Facturacion.FacturacionRutas.Mapear(app);
+Acusa.Orquestador.Rest.ApiRest.Mapear(app);
 
 // ---- Autenticación ---------------------------------------------------------------------------------
 
