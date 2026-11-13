@@ -351,7 +351,7 @@ function recordar(metodo, ruta, cuerpoTexto, res) {
     if (doc.folio != null && doc.concepto != null) { memoria.set("concepto", String(doc.concepto)); memoria.set("serie", doc.serie ? String(doc.serie) : "-"); memoria.set("folio", String(doc.folio)); }
   } catch { /* respuesta de texto */ }
   if (metodo === "POST" && /\/(clientes|productos)$/.test(ruta)) {
-    try { const c = JSON.parse(cuerpoTexto); if (c.codigo) memoria.set("codigo", c.codigo); } catch { /* sin cuerpo */ }
+    try { const c = JSON.parse(cuerpoTexto); if (c.codigo) memoria.set(/\/clientes$/.test(ruta) ? "codigoCliente" : "codigoProducto", c.codigo); } catch { /* sin cuerpo */ }
   }
 }
 
@@ -370,7 +370,8 @@ function consola({ metodo, ruta, op }) {
   const campos = {};
   const params = parametrosRuta(ruta);
   const filaParams = params.length ? h("div", { class: "dos" }, params.map((p) => {
-    const i = h("input", { value: memoria.get(p) || (p === "empresa" ? memoria.get("empresa") || "" : ""), "aria-label": p, spellcheck: "false" });
+    const recordado = p === "codigo" ? memoria.get(ruta.includes("/clientes") ? "codigoCliente" : "codigoProducto") : memoria.get(p);
+    const i = h("input", { value: recordado || "", "aria-label": p, spellcheck: "false" });
     campos[p] = i;
     return h("label", { class: "campo" }, h("span", null, p), i);
   })) : null;
