@@ -42,8 +42,11 @@ if (almacen.ContarUsuarios() == 0 && !string.IsNullOrWhiteSpace(config.CorreoIni
     // Hosting sin disco (Render Free): cada despliegue empieza con la base vacía. Estas variables, todas opcionales, la dejan
     // igual de lista que antes: empresas, llaves con el mismo valor y más usuarios del portal. Quedan en el panel del proveedor.
     foreach (var e in config.EmpresasIniciales.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) almacen.AgregarEmpresa(cliente, e);
-    if (config.LlaveApiInicial.StartsWith("ak_") && config.LlaveApiInicial.Length >= 30) almacen.CrearLlaveConocida(cliente, Roles.Api, config.LlaveApiInicial, "Sistema de Alain");
-    if (config.LlaveWorkerInicial.StartsWith("wk_") && config.LlaveWorkerInicial.Length >= 30) almacen.CrearLlaveConocida(cliente, Roles.Worker, config.LlaveWorkerInicial, "Servidor CONTPAQi");
+    // Cada variable admite varias llaves separadas por coma o punto y coma (útil para cambiar de llave sin perder a quien aún usa la anterior).
+    var llavesApi = config.LlaveApiInicial.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(l => l.StartsWith("ak_") && l.Length >= 30).Distinct().ToList();
+    for (var i = 0; i < llavesApi.Count; i++) almacen.CrearLlaveConocida(cliente, Roles.Api, llavesApi[i], llavesApi.Count == 1 ? "Sistema de Alain" : $"Sistema de Alain {i + 1}");
+    var llavesWorker = config.LlaveWorkerInicial.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(l => l.StartsWith("wk_") && l.Length >= 30).Distinct().ToList();
+    for (var i = 0; i < llavesWorker.Count; i++) almacen.CrearLlaveConocida(cliente, Roles.Worker, llavesWorker[i], llavesWorker.Count == 1 ? "Servidor CONTPAQi" : $"Servidor CONTPAQi {i + 1}");
     foreach (var u in config.UsuariosAdicionales.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
     {
         var p = u.Split('|', StringSplitOptions.TrimEntries); // correo|nombre|contraseña
