@@ -34,8 +34,7 @@ public static class ApiRest
         var e = app.MapGroup("/api/empresas/{empresa}");
 
         // ---- Clientes -----------------------------------------------------------------------------------------------
-        Ruta(e, "POST", "/clientes", true, c => Orden(c, Operaciones.ClienteCrear, Campos(c.Cuerpo!, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "email", "regimenFiscal", "usoCfdi"), 201,
-            Requeridos(c.Cuerpo!, ("codigo", "Codigo"), ("razonSocial", "Razon social"), ("rfc", "Rfc"))));
+        Ruta(e, "POST", "/clientes", true, CrearClienteAsync);
         Ruta(e, "POST", "/clientes/{codigo}/direcciones", true, c =>
         {
             var p = Campos(c.Cuerpo!, "tipo", "calle", "numeroExterior", "numeroInterior", "colonia", "codigoPostal", "municipio", "ciudad", "estado", "pais");
@@ -44,12 +43,7 @@ public static class ApiRest
         });
         Ruta(e, "GET", "/clientes/{codigo}/direcciones/{tipo}", false, c => Orden(c, Operaciones.DireccionLeer, new { codigoCliente = c.Ruta("codigo"), tipo = c.Ruta("tipo") }));
         Ruta(e, "GET", "/clientes/{codigo}", false, c => Orden(c, Operaciones.ClienteLeer, new { codigo = c.Ruta("codigo") }));
-        Ruta(e, "PATCH", "/clientes/{codigo}", true, c =>
-        {
-            var p = Campos(c.Cuerpo!, "razonSocial", "rfc", "limiteCredito", "email", "regimenFiscal", "usoCfdi");
-            p["codigo"] = c.Ruta("codigo");
-            return Orden(c, Operaciones.ClienteActualizar, p, 200, p.Count == 1 ? ["No hay datos que actualizar"] : []);
-        });
+        Ruta(e, "PATCH", "/clientes/{codigo}", true, ActualizarClienteAsync);
 
         // ---- Productos ----------------------------------------------------------------------------------------------
         Ruta(e, "POST", "/productos", true, c => Orden(c, Operaciones.ProductoCrear, Campos(c.Cuerpo!, "codigo", "nombre", "unidadBase", "precio1", "descripcion", "claveSat", "tipoProducto", "textosExtra"), 201,
@@ -130,6 +124,88 @@ public static class ApiRest
         }
 
         return Results.Json(new { error = r.Error, codigoSdk = r.CodigoSdk, tareaId = r.TareaId }, statusCode: 422);
+    }
+
+    // ------------------------------------------------------------------------------------------------------------------
+    // Clientes
+    // ------------------------------------------------------------------------------------------------------------------
+
+    private static readonly string[] CamposDireccion = ["calle", "numeroExterior", "numeroInterior", "colonia", "municipio", "ciudad", "estado", "pais"];
+
+    private static bool CodigoPostalValido(string? cp) => cp is { Length: 5 } && cp.All(char.IsAsciiDigit);
+
+    /// <summary>La dirección fiscal que se guarda junto al cliente: el código postal es el dato que el CFDI 4.0 exige; el resto es opcional.</summary>
+    private static JsonObject DireccionFiscal(JsonObject cuerpo, string codigoCliente)
+    {
+        var d = Campos(cuerpo, CamposDireccion);
+        d["codigoCliente"] = codigoCliente;
+        d["tipo"] = "fiscal";
+        d["codigoPostal"] = Txt(cuerpo["codigoPostal"])!.Trim();
+        return d;
+    }
+
+    private static IResult ClienteConDireccion(ResultadoOrden cliente, ResultadoOrden direccion, int estado)
+    {
+        var resultado = new JsonObject();
+        if (cliente.Datos is { ValueKind: JsonValueKind.Object } cd)
+        {
+            foreach (var p in cd.EnumerateObject()) resultado[p.Name] = JsonNode.Parse(p.Value.GetRawText());
+        }
+
+        resultado["direccion"] = direccion.Datos is { } dd ? JsonNode.Parse(dd.GetRawText()) : null;
+        return Results.Json(new { tareaId = direccion.TareaId, resultado }, statusCode: estado);
+    }
+
+    /// <summary>Crea el cliente y guarda su domicilio fiscal con el código postal que viene en la misma petición.</summary>
+    private static async Task<IResult> CrearClienteAsync(Contexto c)
+    {
+        var d = c.Cuerpo!;
+        var errores = Requeridos(d, ("codigo", "Codigo"), ("razonSocial", "Razon social"), ("rfc", "Rfc"), ("codigoPostal", "Codigo postal"));
+        if (Txt(d["codigoPostal"])?.Trim() is { Length: > 0 } cp && !CodigoPostalValido(cp)) errores.Add("Codigo postal debe tener 5 digitos");
+        if (errores.Count > 0) return Results.Json(new { errors = errores }, statusCode: 422);
+
+        var codigo = Txt(d["codigo"])!.Trim();
+        var cliente = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.ClienteCrear,
+            Campos(d, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "email", "regimenFiscal", "usoCfdi"), c.Llave is null ? null : c.Llave + ":cliente", c.Ct);
+        if (!cliente.Ok) return Responder(c, cliente, 201);
+
+        var direccion = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DireccionCrear, DireccionFiscal(d, codigo), c.Llave is null ? null : c.Llave + ":direccion", c.Ct);
+        if (!direccion.Ok)
+        {
+            return direccion.EnCurso
+                ? Responder(c, direccion, 201)
+                : Results.Json(new { error = $"El cliente se creó, pero no se pudo guardar su domicilio fiscal: {direccion.Error}", clienteCreado = true, codigo, codigoSdk = direccion.CodigoSdk, tareaId = direccion.TareaId }, statusCode: 422);
+        }
+
+        return ClienteConDireccion(cliente, direccion, 201);
+    }
+
+    /// <summary>Actualiza los datos del cliente y, si viene el código postal u otro dato del domicilio, también el domicilio fiscal.</summary>
+    private static async Task<IResult> ActualizarClienteAsync(Contexto c)
+    {
+        var d = c.Cuerpo!;
+        var codigo = c.Ruta("codigo");
+        var cambios = Campos(d, "razonSocial", "rfc", "limiteCredito", "email", "regimenFiscal", "usoCfdi");
+        cambios["codigo"] = codigo;
+        var traeDomicilio = d["codigoPostal"] is not null || CamposDireccion.Any(x => d[x] is not null);
+
+        var errores = new List<string>();
+        if (cambios.Count == 1 && !traeDomicilio) errores.Add("No hay datos que actualizar");
+        if (traeDomicilio && string.IsNullOrWhiteSpace(Txt(d["codigoPostal"]))) errores.Add("Codigo postal no puede estar vacio al guardar el domicilio");
+        if (Txt(d["codigoPostal"])?.Trim() is { Length: > 0 } cp && !CodigoPostalValido(cp)) errores.Add("Codigo postal debe tener 5 digitos");
+        if (errores.Count > 0) return Results.Json(new { errors = errores }, statusCode: 422);
+
+        ResultadoOrden? cliente = null;
+        if (cambios.Count > 1)
+        {
+            cliente = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.ClienteActualizar, cambios, c.Llave is null ? null : c.Llave + ":cliente", c.Ct);
+            if (!cliente.Ok) return Responder(c, cliente);
+        }
+
+        if (!traeDomicilio) return Responder(c, cliente!);
+        var direccion = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DireccionCrear, DireccionFiscal(d, codigo), c.Llave is null ? null : c.Llave + ":direccion", c.Ct);
+        if (!direccion.Ok) return Responder(c, direccion);
+        return cliente is null ? Responder(c, direccion) : ClienteConDireccion(cliente, direccion, 200);
     }
 
     // ------------------------------------------------------------------------------------------------------------------

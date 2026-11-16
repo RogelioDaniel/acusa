@@ -116,6 +116,7 @@
      "Clientes"
     ],
     "summary": "Crear un cliente",
+    "description": "Crea el cliente y guarda su domicilio fiscal. El código postal es obligatorio porque el CFDI 4.0 lo exige del receptor; el resto de la dirección es opcional.",
     "requestBody": {
      "required": true,
      "content": {
@@ -131,7 +132,8 @@
         "limiteCredito": 50000,
         "email": "facturacion@cliente.com",
         "regimenFiscal": "601",
-        "usoCfdi": "G03"
+        "usoCfdi": "G03",
+        "codigoPostal": "06600"
        }
       }
      }
@@ -191,7 +193,8 @@
     "tags": [
      "Clientes"
     ],
-    "summary": "Actualizar un cliente (incluye régimen fiscal y uso de CFDI)",
+    "summary": "Actualizar un cliente (incluye régimen fiscal, uso de CFDI y código postal)",
+    "description": "Si viene el código postal u otro dato del domicilio, también se actualiza el domicilio fiscal (el código postal es obligatorio en ese caso).",
     "requestBody": {
      "required": true,
      "content": {
@@ -204,7 +207,8 @@
         "limiteCredito": 80000,
         "email": "facturacion@cliente.com",
         "regimenFiscal": "601",
-        "usoCfdi": "G03"
+        "usoCfdi": "G03",
+        "codigoPostal": "06600"
        }
       }
      }
@@ -1054,9 +1058,47 @@
     "required": [
      "codigo",
      "razonSocial",
-     "rfc"
+     "rfc",
+     "codigoPostal"
     ],
     "properties": {
+     "codigoPostal": {
+      "type": "string",
+      "description": "Código postal del domicilio fiscal (5 dígitos)",
+      "example": "06600"
+     },
+     "calle": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "numeroExterior": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "numeroInterior": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "colonia": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "municipio": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "ciudad": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "estado": {
+      "type": "string",
+      "description": "Opcional"
+     },
+     "pais": {
+      "type": "string",
+      "description": "Opcional"
+     },
      "codigo": {
       "type": "string"
      },
@@ -1094,6 +1136,34 @@
    "ClienteCambios": {
     "type": "object",
     "properties": {
+     "codigoPostal": {
+      "type": "string",
+      "description": "Código postal del domicilio fiscal (5 dígitos)"
+     },
+     "calle": {
+      "type": "string"
+     },
+     "numeroExterior": {
+      "type": "string"
+     },
+     "numeroInterior": {
+      "type": "string"
+     },
+     "colonia": {
+      "type": "string"
+     },
+     "municipio": {
+      "type": "string"
+     },
+     "ciudad": {
+      "type": "string"
+     },
+     "estado": {
+      "type": "string"
+     },
+     "pais": {
+      "type": "string"
+     },
      "razonSocial": {
       "type": "string"
      },

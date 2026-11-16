@@ -533,7 +533,7 @@ function flujoCompleto() {
     const D = () => `${E}/documentos/${ctx.concepto}/${ctx.serie || "-"}/${ctx.folio}`;
     const llamar = async (m, ruta, c) => { const r = await enviar(m, ruta, c ? JSON.stringify(c) : null); recordar(m, ruta, c ? JSON.stringify(c) : "", r); return { ...r, ruta: `${m} ${ruta}` }; };
     const pasos = [
-      ["Cliente", async () => { ctx.cliente = "PRUEBACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "PRUEBA CLIENTE SA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000 }); }],
+      ["Cliente", async () => { ctx.cliente = "PRUEBACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "PRUEBA CLIENTE SA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000, codigoPostal: "06600" }); }],
       ["Producto de $1", async () => { ctx.producto = "PRUEBAPR" + sufijo; return llamar("POST", `${E}/productos`, { codigo: ctx.producto, nombre: "PRUEBA SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); }],
       ["Documento", async () => {
         const r = await llamar("POST", `${E}/documentos`, { concepto: "5", serie: "PRUEBA", clienteCodigo: ctx.cliente, referencia: "PRUEBAFAC" + sufijo, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }] });

@@ -38,7 +38,7 @@ La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.
 
 | Recurso | Rutas |
 |---|---|
-| Clientes | `POST …/clientes`, `GET` y `PATCH …/clientes/{codigo}`, `POST` y `GET …/clientes/{codigo}/direcciones` |
+| Clientes | `POST …/clientes` (con el código postal del domicilio fiscal), `GET` y `PATCH …/clientes/{codigo}`, `POST` y `GET …/clientes/{codigo}/direcciones` |
 | Productos | `POST …/productos`, `GET` y `PATCH …/productos/{codigo}` |
 | Documentos | `POST …/documentos`, `GET …/documentos/{concepto}/{serie}/{folio}` |
 | Timbrado | `POST …/documentos/{concepto}/{serie}/{folio}/timbrado` (devuelve el UUID y el XML en texto plano), `POST …/documentos/timbrado` (lote de hasta 25) |
