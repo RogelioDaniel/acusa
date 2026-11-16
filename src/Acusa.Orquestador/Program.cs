@@ -56,6 +56,17 @@ if (almacen.ContarUsuarios() == 0 && !string.IsNullOrWhiteSpace(config.CorreoIni
 
 var app = builder.Build();
 
+// Un 401 siempre lleva cuerpo: un cliente de API (Postman, Bruno) muestra el motivo en lugar de una respuesta vacía.
+app.Use(async (contexto, siguiente) =>
+{
+    await siguiente();
+    var r = contexto.Response;
+    if (!r.HasStarted && r.StatusCode == StatusCodes.Status401Unauthorized && (r.ContentLength ?? 0) == 0 && string.IsNullOrEmpty(r.ContentType))
+    {
+        await r.WriteAsJsonAsync(new { error = "No autorizado: falta la cabecera Authorization (Bearer <llave de API o token>) o la llave no es válida." });
+    }
+});
+
 // En la nube Central va detrás del proxy del proveedor (que pone el HTTPS): sin esto, todas las personas parecerían venir de la
 // misma IP y el límite de intentos de acceso las bloquearía juntas. Se activa con Orquestador__ProxyInverso=true.
 if (builder.Configuration.GetValue<bool>("Orquestador:ProxyInverso"))
