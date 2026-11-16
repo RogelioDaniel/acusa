@@ -408,13 +408,13 @@ public sealed class DocumentoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk tra
                 // Un impuesto que no viene en la orden, o viene en cero, no se asigna: Comercial lo deja en cero.
                 // Nombres reales de los campos del movimiento (admMovimientos, consultados en la empresa de pruebas el 2026-11-12):
                 // CPORCENTAJEIMPUESTO1..3 y CPORCENTAJERETENCION1..2. «CPORCENTAJERETENCION» sin número y CPORCENTAJEIMPUESTO4 no
-                // existen (error 73). La prueba real mostró que, sin editar y guardar el movimiento, Comercial ignora el porcentaje
+                // existen (error 73). Montek (en producción) manda la retención de IVA en CPORCENTAJERETENCION2. La prueba real mostró que, sin editar y guardar el movimiento, Comercial ignora el porcentaje
                 // enviado y vuelve al valor por omisión (16 % de IVA, sin IEPS ni retención): por eso se edita y se guarda.
                 var impuestos = new[]
                 {
                     ("CPORCENTAJEIMPUESTO1", partida.IvaPorcentaje),
                     ("CPORCENTAJEIMPUESTO2", partida.IepsPorcentaje),
-                    ("CPORCENTAJERETENCION1", partida.RetencionIvaPorcentaje),
+                    ("CPORCENTAJERETENCION2", partida.RetencionIvaPorcentaje),
                 }.Where(x => x.Item2 is { } v && v != 0m).ToList();
 
                 if (impuestos.Count > 0)

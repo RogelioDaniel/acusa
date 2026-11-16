@@ -7,7 +7,7 @@
 - El timbrado devuelve el UUID y el XML en texto plano. Al crear un documento son obligatorios `usoCfdi` y `regimenFiscal`, y cada
   movimiento admite IVA, retención de IVA e IEPS.
 - Los impuestos del movimiento se escriben con la secuencia del SDK (`fEditarMovimiento`, `fSetDatoMovimiento`, `fGuardaMovimiento`) y
-  los nombres reales de campo (`CPORCENTAJERETENCION1`); antes Comercial los ignoraba y aplicaba los valores por omisión.
+  los nombres reales de campo (`CPORCENTAJERETENCION2` (la que usa Montek para la retención de IVA)); antes Comercial los ignoraba y aplicaba los valores por omisión.
 - Documentación OpenAPI en `/api-docs` con ejemplos de cuerpo y modo claro y oscuro. El portal incluye una consola para lanzar
   peticiones, secciones de prueba y un importador de colecciones de Postman.
 - Cada tarea del portal muestra la petición REST que la originó.
