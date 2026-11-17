@@ -307,7 +307,7 @@ public class TimbradoTests
     }
 
     [Fact]
-    public async Task El_ejecutor_acepta_documentoId_como_montek()
+    public async Task El_ejecutor_acepta_documentoId()
     {
         var (ejecutor, e) = await EjecutorAsync();
         var d = await NuevoDocumentoAsync(e);

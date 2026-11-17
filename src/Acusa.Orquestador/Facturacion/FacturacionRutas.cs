@@ -4,16 +4,15 @@ using Acusa.Contrato;
 namespace Acusa.Orquestador.Facturacion;
 
 /// <summary>
-/// Las rutas del Swagger de Alain, con los mismos caminos, métodos y nombres de campo: <c>/companies</c>, <c>/products</c>,
-/// <c>/issuing_companies/{id}/invoices</c>, <c>/movements</c> y demás. Un sistema que hoy llama a su aplicación puede apuntar
-/// a Acusa Central con solo cambiar la dirección y la forma de obtener el token. Usan el mismo token de Acusa (llave de API).
-/// Quedan fuera, por indicación de Alain: reportes, descargas y usuarios; solo se agrega <c>POST /users/sessions</c> para iniciar sesión.
+/// Rutas de facturación con los caminos, métodos y nombres de campo: <c>/companies</c>, <c>/products</c>,
+/// <c>/issuing_companies/{id}/invoices</c>, <c>/movements</c> y demás. Usan el mismo token de Acusa (llave de API).
+/// Quedan fuera: reportes, descargas y usuarios; solo se agrega <c>POST /users/sessions</c> para iniciar sesión.
 /// </summary>
 public static class FacturacionRutas
 {
     public static void Mapear(WebApplication app)
     {
-        var raiz = app.MapGroup(string.Empty).WithTags("Facturación (rutas de Alain)");
+        var raiz = app.MapGroup(string.Empty).WithTags("Facturación");
 
         // ---- Sesión -----------------------------------------------------------------------------------------------
         raiz.MapPost("/users/sessions", (JsonNode? cuerpo, HttpContext http, Almacen a, Seguridad seguridad, IntentosDeAcceso intentos) =>

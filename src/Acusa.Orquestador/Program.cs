@@ -44,7 +44,7 @@ if (almacen.ContarUsuarios() == 0 && !string.IsNullOrWhiteSpace(config.CorreoIni
     foreach (var e in config.EmpresasIniciales.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) almacen.AgregarEmpresa(cliente, e);
     // Cada variable admite varias llaves separadas por coma o punto y coma (útil para cambiar de llave sin perder a quien aún usa la anterior).
     var llavesApi = config.LlaveApiInicial.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(l => l.StartsWith("ak_") && l.Length >= 30).Distinct().ToList();
-    for (var i = 0; i < llavesApi.Count; i++) almacen.CrearLlaveConocida(cliente, Roles.Api, llavesApi[i], llavesApi.Count == 1 ? "Sistema de Alain" : $"Sistema de Alain {i + 1}");
+    for (var i = 0; i < llavesApi.Count; i++) almacen.CrearLlaveConocida(cliente, Roles.Api, llavesApi[i], llavesApi.Count == 1 ? "Sistema cliente" : $"Sistema cliente {i + 1}");
     var llavesWorker = config.LlaveWorkerInicial.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(l => l.StartsWith("wk_") && l.Length >= 30).Distinct().ToList();
     for (var i = 0; i < llavesWorker.Count; i++) almacen.CrearLlaveConocida(cliente, Roles.Worker, llavesWorker[i], llavesWorker.Count == 1 ? "Servidor CONTPAQi" : $"Servidor CONTPAQi {i + 1}");
     foreach (var u in config.UsuariosAdicionales.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -81,7 +81,7 @@ if (builder.Configuration.GetValue<bool>("Orquestador:ProxyInverso"))
 }
 
 app.UseDefaultFiles();
-// /api-docs: Swagger UI con las rutas de Alain sobre Acusa (openapi.yaml necesita su tipo de contenido).
+// /api-docs: Swagger UI con la documentación de la API (openapi.yaml necesita su tipo de contenido).
 var tiposDeContenido = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 tiposDeContenido.Mappings[".yaml"] = "application/yaml";
 // Sin caché: el portal y la documentación se actualizan con cada despliegue y el navegador debe pedirlos de nuevo.
@@ -576,7 +576,7 @@ public sealed class Opciones
     /// <summary>Tope de espera que una solicitud puede pedir con <c>?esperar=</c>.</summary>
     public int EsperaMaximaSegundos { get; set; } = 120;
 
-    // ---- Rutas de facturación (las del Swagger de Alain) ----------------------------------------------------------
+    // ---- Rutas de facturación ----------------------------------------------------------
 
     /// <summary>Segundos que cada paso de las rutas de facturación espera al worker antes de responder «en curso».</summary>
     public int FacturacionEsperaSegundos { get; set; } = 60;

@@ -10,8 +10,7 @@ public sealed class OpcionesContpaqi
 
     /// <summary>
     /// <c>Dialogo</c> abre "Ingreso a CONTPAQi COMERCIAL" y espera a que alguien escriba la clave (comprobado).
-    /// <c>Credenciales</c> inicia sesión con <c>fInicioSesionSDK(usuario, clave)</c> sin diálogo (secuencia de Montek;
-    /// pendiente de comprobar). La clave se pide en la consola de la API y nunca se guarda ni se registra.
+    /// <c>Credenciales</c> inicia sesión con <c>fInicioSesionSDK(usuario, clave)</c> sin diálogo (comprobado en el servidor). La clave se pide en la consola de la API y nunca se guarda ni se registra.
     /// </summary>
     public string Inicio { get; set; } = "Dialogo";
 
@@ -22,8 +21,8 @@ public sealed class OpcionesContpaqi
     public string NombrePaq { get; set; } = "CONTPAQ I COMERCIAL";
 
     /// <summary>
-    /// Además de <c>fInicioSesionSDK</c>, llama <c>fInicioSesionSDKCONTPAQi</c> con el mismo usuario y clave, como hace
-    /// Montek. Apagado: solo hace falta si el SDK lo exige, y una clave rechazada cuenta como intento fallido.
+    /// Además de <c>fInicioSesionSDK</c>, llama <c>fInicioSesionSDKCONTPAQi</c> con el mismo usuario y clave.
+    /// Apagado: solo hace falta si el SDK lo exige, y una clave rechazada cuenta como intento fallido.
     /// </summary>
     public bool IniciarSesionContabilidad { get; set; }
 

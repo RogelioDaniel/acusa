@@ -1,6 +1,6 @@
 /* Acusa v1:hoja de estilos compartida por el portal,el panel del worker y el Programador. */
 :root{--papel:#f2f4ee;--hoja:#fff;--tinta:#16231d;--suave:#566660;--linea:#d8ded2;--verde:#0b6b50;--verde-osc:#08553f;--verde-tenue:#e0eee7;
---rojo:#b3261e;--rojo-tenue:#fbe9e7;--ambar:#8f5f00;--ambar-tenue:#faf0d6;
+--borde:#b7c2b4;--codigo:#f6f8f3;--campo:#fff;--rojo:#b3261e;--rojo-tenue:#fbe9e7;--ambar:#8f5f00;--ambar-tenue:#faf0d6;
 --sans:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;--mono:Consolas,"Cascadia Mono",ui-monospace,monospace}
 *{box-sizing:border-box}
 body{margin:0;background:var(--papel);color:var(--tinta);font:15px/1.5 var(--sans)}
@@ -57,7 +57,7 @@ td{padding:9px 10px;border-bottom:1px solid var(--linea);vertical-align:top}
 tr:last-child td{border-bottom:0}
 .campo{display:block;margin-bottom:12px;flex:1 1 220px}
 .campo > span{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
-input,select,textarea{width:100%;padding:8px 10px;border:1px solid #b7c2b4;border-radius:6px;background:#fff}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--borde);border-radius:6px;background:var(--campo)}
 input[type=checkbox]{width:auto;accent-color:var(--verde)}
 textarea{min-height:140px;font:13px/1.45 var(--mono)}
 .interruptor{display:flex;gap:10px;align-items:flex-start;margin:4px 0 12px}
@@ -65,7 +65,7 @@ textarea{min-height:140px;font:13px/1.45 var(--mono)}
 .boton{display:inline-block;padding:8px 16px;border:1px solid var(--verde-osc);border-radius:6px;background:var(--verde);color:#fff;font-weight:600;cursor:pointer;text-decoration:none}
 .boton:hover{background:var(--verde-osc)}
 .boton:disabled{opacity:.55;cursor:default}
-.boton.suave{background:var(--hoja);color:var(--tinta);border-color:#b7c2b4}
+.boton.suave{background:var(--hoja);color:var(--tinta);border-color:var(--borde)}
 .boton.suave:hover{background:var(--verde-tenue)}
 .boton.chico{padding:3px 10px;font-size:13px}
 .error,.err{color:var(--rojo);font-size:14px;min-height:1.2em;margin:0 0 8px}
@@ -75,7 +75,7 @@ textarea{min-height:140px;font:13px/1.45 var(--mono)}
 .ficha.aviso,.estado-EnProceso,.estado-Pendiente{background:var(--ambar-tenue);color:var(--ambar)}
 .alerta,.resultado-prueba{padding:10px 14px;border-radius:6px;margin-bottom:14px;background:var(--rojo-tenue);color:var(--rojo)}
 .resultado-prueba{margin-top:10px} .resultado-prueba.ok{background:var(--verde-tenue);color:var(--verde-osc)}
-pre,.copiable code{font:13px/1.45 var(--mono);background:#f6f8f3;border:1px solid var(--linea);border-radius:6px;padding:10px 12px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:8px 0}
+pre,.copiable code{font:13px/1.45 var(--mono);background:var(--codigo);border:1px solid var(--linea);border-radius:6px;padding:10px 12px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:8px 0}
 .copiable{display:flex;gap:8px;align-items:flex-start} .copiable code{flex:1;margin:0}
 .bitacora{font:12.5px/1.55 var(--mono);background:var(--tinta);color:#d6e3da;border-radius:6px;padding:12px 14px;height:56vh;overflow:auto}
 .bitacora div{white-space:pre-wrap;word-break:break-word} .bitacora .AVISO{color:#f0c36a} .bitacora .ERROR{color:#ff9d92}
@@ -96,3 +96,17 @@ dialog::backdrop{background:rgba(22,35,29,.45)}
 .prog{grid-template-columns:auto 1fr} .prog .lado{grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:space-between}
 .copiable{flex-direction:column}
 }
+
+/* Modo oscuro: se elige con el botón de la barra superior y se recuerda en este navegador. */
+:root[data-tema="oscuro"]{color-scheme:dark;--papel:#0e1512;--hoja:#16201b;--tinta:#e5eee8;--suave:#9bafa4;--linea:#2a3832;--verde:#3cc79a;--verde-osc:#7fe0c0;--verde-tenue:#173a2e;--borde:#3a4c44;--codigo:#0f1915;--campo:#0f1915;
+--rojo:#ff8d82;--rojo-tenue:#3b201d;--ambar:#f1c76e;--ambar-tenue:#3a3012}
+:root[data-tema="oscuro"] .boton{color:#04150f;border-color:var(--verde-osc)}
+:root[data-tema="oscuro"] .boton.suave{color:var(--tinta)}
+:root[data-tema="oscuro"] .toast{background:#e5eee8;color:#0e1512}
+:root[data-tema="oscuro"] dialog{background:var(--hoja);color:var(--tinta)}
+.boton-tema{padding:3px 10px;border:1px solid var(--borde);border-radius:6px;background:var(--hoja);color:var(--tinta);font-size:13px;cursor:pointer}
+.boton-tema:hover{background:var(--verde-tenue)}
+.consola{border:1px solid var(--linea);border-radius:8px;padding:12px 14px;background:var(--papel)}
+.consola textarea{min-height:200px}
+.consola .resultado pre{max-height:420px}
+button[role=tab]{font:inherit}

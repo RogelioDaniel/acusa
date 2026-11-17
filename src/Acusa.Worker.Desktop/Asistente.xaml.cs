@@ -14,7 +14,7 @@ using System.Windows.Media;
 namespace Acusa.Worker.Desktop;
 
 /// <summary>
-/// Asistente de primera configuración del worker, con los mismos pasos que el de Montek: bienvenida, autenticación con la cuenta
+/// Asistente de primera configuración del worker, con estos pasos: bienvenida, autenticación con la cuenta
 /// administradora, base de datos, SDK, licencia (equipo), llave de API, empresas, revisión e instalación.
 /// Las contraseñas solo viven en memoria durante el asistente; a disco va la configuración sin secretos y la llave cifrada.
 /// </summary>

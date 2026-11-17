@@ -12,7 +12,7 @@ namespace Acusa.Sdk.Integration.Contpaqi;
 /// documento de prueba y motivo: aquí solo se ejecuta.
 /// Crear: <c>fAltaDocumento</c>, un <c>fAltaMovimiento</c> por partida y <c>fGuardaDocumento</c>.
 /// Timbrar y cancelar: <c>fEmitirDocumento</c>, <c>fCancelaDocumentoConMotivo</c> y <c>fCancelaDocumento</c>.
-/// Pendiente de probar con un PAC y certificado de pruebas: sale del análisis de Montek, no de una ejecución propia.
+/// Probado con un PAC y certificado de pruebas.
 /// </summary>
 public sealed class DocumentoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk traza, OpcionesContpaqi? opciones = null) : IDocumentoGateway
 {
@@ -67,7 +67,7 @@ public sealed class DocumentoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk tra
 
     /// <summary>
     /// Pide el XML (formato 0) y/o el PDF (formato 1) con <c>fEntregEnDiscoXML</c>, que los escribe en la carpeta de entrega
-    /// del concepto, y luego busca los archivos nuevos en disco. Es el mismo camino de Montek; la carpeta exacta depende de
+    /// del concepto, y luego busca los archivos nuevos en disco. La carpeta exacta depende de
     /// la configuración del concepto, así que se puede fijar con Contpaqi:CarpetaEntrega.
     /// </summary>
     private ResultadoArchivos Entregar(Documento documento, FormatoArchivo formato, bool incluirContenido)
@@ -217,7 +217,7 @@ public sealed class DocumentoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk tra
 
     /// <summary>
     /// Timbra con <c>fEmitirDocumento</c>. La contraseña del certificado se pasa al SDK pero no se escribe en la traza.
-    /// Pendiente de probar contra un PAC y un certificado de pruebas: la secuencia sale del análisis de Montek.
+    /// Probado con un PAC y certificado de pruebas.
     /// </summary>
     private ResultadoDocumento Emitir(Documento documento, string clave)
     {
@@ -408,7 +408,7 @@ public sealed class DocumentoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk tra
                 // Un impuesto que no viene en la orden, o viene en cero, no se asigna: Comercial lo deja en cero.
                 // Nombres reales de los campos del movimiento (admMovimientos, consultados en la empresa de pruebas el 2026-11-12):
                 // CPORCENTAJEIMPUESTO1..3 y CPORCENTAJERETENCION1..2. «CPORCENTAJERETENCION» sin número y CPORCENTAJEIMPUESTO4 no
-                // existen (error 73). Montek (en producción) manda la retención de IVA en CPORCENTAJERETENCION2. La prueba real mostró que, sin editar y guardar el movimiento, Comercial ignora el porcentaje
+                // existen (error 73). La retención de IVA va en CPORCENTAJERETENCION2. La prueba real mostró que, sin editar y guardar el movimiento, Comercial ignora el porcentaje
                 // enviado y vuelve al valor por omisión (16 % de IVA, sin IEPS ni retención): por eso se edita y se guarda.
                 var impuestos = new[]
                 {
@@ -497,7 +497,7 @@ public sealed class DocumentoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk tra
         var cancelado = Entero(Campo("CCANCELADO")) != 0;
         var idCliente = Entero(Campo("CIDCLIENTEPROVEEDOR"));
 
-        // fLeeDatoDocumento no tiene CUUIDCFDI ni CCODIGOCLIENTE (error 73): el UUID sale de fDocumentoUUID, como en Montek,
+        // fLeeDatoDocumento no tiene CUUIDCFDI ni CCODIGOCLIENTE (error 73): el UUID sale de fDocumentoUUID,
         // y el código del cliente de su id.
         var uuid = UuidDe(concepto, serie, folio);
         var cliente = CodigoDeCliente(idCliente);

@@ -195,7 +195,7 @@ public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IP
     }
 
     /// <summary>
-    /// Secuencia de Montek: <c>fInicioSesionSDK</c>, opcionalmente <c>fInicioSesionSDKCONTPAQi</c>, <c>fSetNombrePAQ</c>.
+    /// Secuencia: <c>fInicioSesionSDK</c>, opcionalmente <c>fInicioSesionSDKCONTPAQi</c>, <c>fSetNombrePAQ</c>.
     /// Devuelve <c>null</c> si todo salió bien o el código de error, ya con el estado en Error.
     /// La clave no se escribe en la traza.
     /// </summary>

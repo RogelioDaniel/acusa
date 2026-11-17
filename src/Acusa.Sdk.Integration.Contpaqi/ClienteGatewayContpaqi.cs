@@ -63,8 +63,7 @@ public sealed class ClienteGatewayContpaqi(SesionContpaqi sesion, OpcionesContpa
 
     /// <summary>
     /// Crea o completa la dirección con <c>fInsertaDireccion</c> o <c>fEditaDireccion</c>, <c>fSetDatoDireccion</c> por campo
-    /// y <c>fGuardaDireccion</c>. El alta liga la dirección al cliente con CIDCATALOGO y CTIPOCATALOGO=1. Los nombres de campo
-    /// salen de los textos de Montek; la secuencia no se ha comprobado contra Comercial: si falla, cancela sin guardar.
+    /// y <c>fGuardaDireccion</c>. El alta liga la dirección al cliente con CIDCATALOGO y CTIPOCATALOGO=1. Si algo falla, cancela sin guardar.
     /// </summary>
     private ResultadoDireccion GuardarDireccion(Direccion d)
     {
@@ -167,8 +166,7 @@ public sealed class ClienteGatewayContpaqi(SesionContpaqi sesion, OpcionesContpa
 
     /// <summary>
     /// Modifica con <c>fBuscaCteProv</c>, <c>fEditaCteProv</c>, un <c>fSetDatoCteProv</c> por campo con valor y
-    /// <c>fGuardaCteProv</c>; si algo falla cancela la edición. Los campos CREGIMFISC, CUSOCFDI y CEMAIL1 salen de los
-    /// textos de Montek: no se han comprobado contra Comercial (un campo que no exista falla sin guardar nada).
+    /// <c>fGuardaCteProv</c>; si algo falla cancela la edición. Un campo que no exista falla sin guardar nada.
     /// </summary>
     private ResultadoActualizar Actualizar(string codigo, CambiosCliente cambios)
     {

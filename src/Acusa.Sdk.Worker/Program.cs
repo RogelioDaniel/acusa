@@ -209,5 +209,5 @@ internal sealed class ClaveProtegida(string? clave) : IProveedorClave
 {
     public string ObtenerClave() =>
         Environment.GetEnvironmentVariable("ACUSA_CLAVE_SDK") is { Length: > 0 } entorno ? entorno
-        : clave ?? string.Empty; // sin clave guardada: el usuario del SDK puede no tener contraseña (como SUPERVISOR en Montek)
+        : clave ?? string.Empty; // sin clave guardada: el usuario del SDK puede no tener contraseña
 }

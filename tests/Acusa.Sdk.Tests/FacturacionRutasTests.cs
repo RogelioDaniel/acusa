@@ -5,7 +5,7 @@ using Acusa.Orquestador.Facturacion;
 
 namespace Acusa.Sdk.Tests;
 
-/// <summary>Las rutas de Alain (compañías, productos, facturas, partidas) y cómo se traducen a órdenes para el worker.</summary>
+/// <summary>Las rutas de facturación (compañías, productos, facturas, partidas) y cómo se traducen a órdenes para el worker.</summary>
 public sealed class FacturacionRutasTests : IDisposable
 {
     private sealed record Llamada(string Empresa, string Tipo, JsonElement Payload, string? Llave);
@@ -236,7 +236,7 @@ public sealed class FacturacionRutasTests : IDisposable
     }
 
     [Fact]
-    public async Task Crear_direccion_manda_direccion_crear_con_los_campos_de_alain()
+    public async Task Crear_direccion_manda_direccion_crear_con_los_campos_esperados()
     {
         Emisora();
         var id = await Compania();

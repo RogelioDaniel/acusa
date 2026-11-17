@@ -44,7 +44,7 @@ public class DatosCfdiTests
     }
 
     [Fact]
-    public async Task Montek_manda_claveSAT_en_mayusculas_y_tambien_se_acepta()
+    public async Task Se_acepta_claveSAT_en_mayusculas_y_tambien_se_acepta()
     {
         var e = await CrearAsync();
 

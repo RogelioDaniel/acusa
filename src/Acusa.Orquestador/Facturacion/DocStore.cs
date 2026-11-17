@@ -6,7 +6,7 @@ namespace Acusa.Orquestador.Facturacion;
 /// <summary>
 /// Almacén sencillo de documentos JSON para las rutas de facturación (compañías, productos, facturas, partidas, direcciones
 /// y empresas emisoras). Cada documento pertenece a un cliente de Acusa y solo él lo ve. Los identificadores son enteros
-/// por tipo, como en el sistema de facturación de Alain. Usa el mismo archivo de base de datos que Central.
+/// por tipo Usa el mismo archivo de base de datos que Central.
 /// </summary>
 public sealed class DocStore
 {

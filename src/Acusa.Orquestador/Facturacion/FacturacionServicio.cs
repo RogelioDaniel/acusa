@@ -11,7 +11,7 @@ public sealed record Resp(int Status, object? Body);
 public sealed record ParametrosLista(int? Limit, int? Offset, string? Campo, string? Direccion);
 
 /// <summary>
-/// Las rutas de facturación del Swagger de Alain: compañías, direcciones, productos, empresas emisoras, facturas y partidas.
+/// Servicio de facturación: compañías, direcciones, productos, empresas emisoras, facturas y partidas.
 /// Acusa guarda estos registros (como su aplicación) y, cuando hay que tocar CONTPAQi, manda la orden al worker por la cola y
 /// espera el resultado en la misma llamada. Una factura se guarda como borrador; <c>stamps</c> la crea en Comercial y la timbra.
 /// </summary>

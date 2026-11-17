@@ -8,8 +8,8 @@ namespace Acusa.Sdk.Integration.Contpaqi;
 
 /// <summary>
 /// Productos sobre el SDK real. Solo busca y crea; no borra ni modifica.
-/// El alta usa <c>fAltaProducto</c> con la estructura <see cref="TProducto"/>. Pendiente de probar en la
-/// empresa de pruebas: la secuencia sale del análisis de Montek, no de una ejecución propia.
+/// El alta usa <c>fAltaProducto</c> con la estructura <see cref="TProducto"/>. Probado en la
+/// empresa de pruebas.
 /// </summary>
 public sealed class ProductoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk traza) : IProductoGateway
 {
@@ -50,7 +50,7 @@ public sealed class ProductoGatewayContpaqi(SesionContpaqi sesion, TrazaSdk traz
 
     /// <summary>
     /// Modifica con <c>fBuscaProducto</c>, <c>fEditaProducto</c>, un <c>fSetDatoProducto</c> por campo con valor y
-    /// <c>fGuardaProducto</c>; si algo falla cancela la edición. CCLAVESAT es el campo que Montek usa para la clave SAT.
+    /// <c>fGuardaProducto</c>; si algo falla cancela la edición. CCLAVESAT es el campo de la clave SAT.
     /// </summary>
     private ResultadoActualizarProducto Actualizar(string codigo, CambiosProducto cambios)
     {

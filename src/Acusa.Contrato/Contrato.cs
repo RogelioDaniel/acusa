@@ -28,7 +28,7 @@ public static class Operaciones
     public const string DireccionLeer = "direccion.leer";
     public const string DocumentoObtenerArchivo = "documento.obtener-archivo";
 
-    /// <summary>Timbrado masivo: una orden con varios documentos. Es propia de Acusa, no existe con este nombre en Montek.</summary>
+    /// <summary>Timbrado masivo: una orden con varios documentos.</summary>
     public const string DocumentoEmitirLote = "documento.emitir.lote";
 
     public const string DocumentoCancelarLote = "documento.cancelar.lote";
@@ -71,7 +71,7 @@ public static class Operaciones
 /// <summary>Cuerpo de <c>POST /api/sdk/execute</c>.</summary>
 /// <param name="TipoProceso">Operación, por ejemplo <c>documento.crear</c>.</param>
 /// <param name="Empresa">Nombre de la empresa de CONTPAQi (carpeta o base), por ejemplo <c>adEMPRESA_DE_PRUEBA</c>.</param>
-/// <param name="DbName">Alias de <paramref name="Empresa"/>: es el nombre que usa Montek, para no cambiar integraciones existentes.</param>
+/// <param name="DbName">Alias de <paramref name="Empresa"/>: se conserva por compatibilidad con integraciones existentes.</param>
 /// <param name="Payload">Datos de la operación.</param>
 public sealed record SolicitudEjecutar(string TipoProceso, string? Empresa, JsonElement? Payload, string? DbName = null, string? LlaveIdempotencia = null);
 
