@@ -25,42 +25,42 @@ public sealed class DocStore
     /// <summary>Guarda un documento nuevo y le asigna el siguiente identificador de su tipo; también lo escribe en <c>id</c>.</summary>
     public int Insertar(string tipo, string clienteId, JsonObject doc)
     {
-        using var cn = Abrir();
-        using var tx = cn.BeginTransaction();
+        using var conexion = Abrir();
+        using var transaccion = conexion.BeginTransaction();
         int id;
-        using (var cmd = cn.CreateCommand())
+        using (var comando = conexion.CreateCommand())
         {
-            cmd.Transaction = tx;
-            cmd.CommandText = "INSERT INTO docs_contador (tipo, ultimo) VALUES ($t, 1) ON CONFLICT(tipo) DO UPDATE SET ultimo = ultimo + 1 RETURNING ultimo";
-            cmd.Parameters.AddWithValue("$t", tipo);
-            id = Convert.ToInt32(cmd.ExecuteScalar());
+            comando.Transaction = transaccion;
+            comando.CommandText = "INSERT INTO docs_contador (tipo, ultimo) VALUES ($t, 1) ON CONFLICT(tipo) DO UPDATE SET ultimo = ultimo + 1 RETURNING ultimo";
+            comando.Parameters.AddWithValue("$t", tipo);
+            id = Convert.ToInt32(comando.ExecuteScalar());
         }
 
         doc["id"] = id;
-        using (var cmd = cn.CreateCommand())
+        using (var comando = conexion.CreateCommand())
         {
-            cmd.Transaction = tx;
-            cmd.CommandText = "INSERT INTO docs (tipo, id, cliente_id, json) VALUES ($t, $i, $c, $j)";
-            cmd.Parameters.AddWithValue("$t", tipo);
-            cmd.Parameters.AddWithValue("$i", id);
-            cmd.Parameters.AddWithValue("$c", clienteId);
-            cmd.Parameters.AddWithValue("$j", doc.ToJsonString());
-            cmd.ExecuteNonQuery();
+            comando.Transaction = transaccion;
+            comando.CommandText = "INSERT INTO docs (tipo, id, cliente_id, json) VALUES ($t, $i, $c, $j)";
+            comando.Parameters.AddWithValue("$t", tipo);
+            comando.Parameters.AddWithValue("$i", id);
+            comando.Parameters.AddWithValue("$c", clienteId);
+            comando.Parameters.AddWithValue("$j", doc.ToJsonString());
+            comando.ExecuteNonQuery();
         }
 
-        tx.Commit();
+        transaccion.Commit();
         return id;
     }
 
     public JsonObject? Obtener(string tipo, string clienteId, int id)
     {
-        using var cn = Abrir();
-        using var cmd = cn.CreateCommand();
-        cmd.CommandText = "SELECT json FROM docs WHERE tipo=$t AND id=$i AND cliente_id=$c";
-        cmd.Parameters.AddWithValue("$t", tipo);
-        cmd.Parameters.AddWithValue("$i", id);
-        cmd.Parameters.AddWithValue("$c", clienteId);
-        return cmd.ExecuteScalar() is string json ? JsonNode.Parse(json) as JsonObject : null;
+        using var conexion = Abrir();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = "SELECT json FROM docs WHERE tipo=$t AND id=$i AND cliente_id=$c";
+        comando.Parameters.AddWithValue("$t", tipo);
+        comando.Parameters.AddWithValue("$i", id);
+        comando.Parameters.AddWithValue("$c", clienteId);
+        return comando.ExecuteScalar() is string json ? JsonNode.Parse(json) as JsonObject : null;
     }
 
     public bool Actualizar(string tipo, string clienteId, int id, JsonObject doc)
@@ -77,12 +77,12 @@ public sealed class DocStore
 
     public List<JsonObject> Listar(string tipo, string clienteId)
     {
-        using var cn = Abrir();
-        using var cmd = cn.CreateCommand();
-        cmd.CommandText = "SELECT json FROM docs WHERE tipo=$t AND cliente_id=$c ORDER BY id";
-        cmd.Parameters.AddWithValue("$t", tipo);
-        cmd.Parameters.AddWithValue("$c", clienteId);
-        using var r = cmd.ExecuteReader();
+        using var conexion = Abrir();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = "SELECT json FROM docs WHERE tipo=$t AND cliente_id=$c ORDER BY id";
+        comando.Parameters.AddWithValue("$t", tipo);
+        comando.Parameters.AddWithValue("$c", clienteId);
+        using var r = comando.ExecuteReader();
         var lista = new List<JsonObject>();
         while (r.Read())
         {
@@ -97,24 +97,24 @@ public sealed class DocStore
 
     private SqliteConnection Abrir()
     {
-        var cn = new SqliteConnection(_cadena);
-        cn.Open();
-        using var cmd = cn.CreateCommand();
-        cmd.CommandText = "PRAGMA busy_timeout=5000;";
-        cmd.ExecuteNonQuery();
-        return cn;
+        var conexion = new SqliteConnection(_cadena);
+        conexion.Open();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = "PRAGMA busy_timeout=5000;";
+        comando.ExecuteNonQuery();
+        return conexion;
     }
 
     private int Ejecutar(string sql, params (string Nombre, object? Valor)[] parametros)
     {
-        using var cn = Abrir();
-        using var cmd = cn.CreateCommand();
-        cmd.CommandText = sql;
+        using var conexion = Abrir();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = sql;
         foreach (var (nombre, valor) in parametros)
         {
-            cmd.Parameters.AddWithValue(nombre, valor ?? DBNull.Value);
+            comando.Parameters.AddWithValue(nombre, valor ?? DBNull.Value);
         }
 
-        return cmd.ExecuteNonQuery();
+        return comando.ExecuteNonQuery();
     }
 }

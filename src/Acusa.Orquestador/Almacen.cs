@@ -75,9 +75,9 @@ public sealed class Almacen
 
     public IReadOnlyList<string> EmpresasDelCliente(string clienteId)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, "SELECT nombre FROM empresas WHERE cliente_id=$c ORDER BY nombre", ("$c", clienteId));
-        using var r = cmd.ExecuteReader();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT nombre FROM empresas WHERE cliente_id=$c ORDER BY nombre", ("$c", clienteId));
+        using var r = comando.ExecuteReader();
         var lista = new List<string>();
         while (r.Read())
         {
@@ -107,9 +107,9 @@ public sealed class Almacen
 
     public IReadOnlyList<LlaveDto> ListarLlaves(string clienteId)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, "SELECT id, nombre, rol, prefijo, activa, creada, ultimo_uso FROM llaves WHERE cliente_id=$c ORDER BY creada DESC", ("$c", clienteId));
-        using var r = cmd.ExecuteReader();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT id, nombre, rol, prefijo, activa, creada, ultimo_uso FROM llaves WHERE cliente_id=$c ORDER BY creada DESC", ("$c", clienteId));
+        using var r = comando.ExecuteReader();
         var lista = new List<LlaveDto>();
         while (r.Read())
         {
@@ -146,13 +146,13 @@ public sealed class Almacen
 
     private UsuarioRegistro? BuscarUsuario(string condicion, string valor)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(
-            cn,
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
             "SELECT u.id, u.cliente_id, u.email, u.nombre, u.clave, c.nombre FROM usuarios u JOIN clientes c ON c.id=u.cliente_id " +
             $"WHERE {condicion} AND u.activo=1 AND c.activo=1",
             ("$v", valor));
-        using var r = cmd.ExecuteReader();
+        using var r = comando.ExecuteReader();
         return r.Read()
             ? new UsuarioRegistro(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5))
             : null;
@@ -163,9 +163,9 @@ public sealed class Almacen
 
     public string? NombreCliente(string clienteId)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, "SELECT nombre FROM clientes WHERE id=$c", ("$c", clienteId));
-        return cmd.ExecuteScalar() as string;
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT nombre FROM clientes WHERE id=$c", ("$c", clienteId));
+        return comando.ExecuteScalar() as string;
     }
 
     // ---- Resumen del portal ----------------------------------------------------------------
@@ -178,10 +178,10 @@ public sealed class Almacen
 
         var workers = ListarWorkers(clienteId, ventanaWorker);
         DateTime? ultima = null;
-        using (var cn = Abrir())
+        using (var conexion = Abrir())
         {
-            using var cmd = Comando(cn, "SELECT MAX(creada) FROM tareas WHERE cliente_id=$c", ("$c", clienteId));
-            if (cmd.ExecuteScalar() is string t)
+            using var comando = Comando(conexion, "SELECT MAX(creada) FROM tareas WHERE cliente_id=$c", ("$c", clienteId));
+            if (comando.ExecuteScalar() is string t)
             {
                 ultima = Fecha(t);
             }
@@ -195,12 +195,12 @@ public sealed class Almacen
 
     public Identidad? BuscarLlave(string llave)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(
-            cn,
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
             "SELECT l.id, l.cliente_id, l.rol FROM llaves l JOIN clientes c ON c.id=l.cliente_id WHERE l.hash=$h AND l.activa=1 AND c.activo=1",
             ("$h", Seguridad.HashLlave(llave)));
-        using var r = cmd.ExecuteReader();
+        using var r = comando.ExecuteReader();
         if (!r.Read())
         {
             return null;
@@ -264,9 +264,9 @@ public sealed class Almacen
 
     private (string Id, EstadoTarea Estado, string? Huella)? BuscarPorLlave(string clienteId, string llave)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, "SELECT id, estado, huella FROM tareas WHERE cliente_id=$c AND llave=$l", ("$c", clienteId), ("$l", llave));
-        using var r = cmd.ExecuteReader();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT id, estado, huella FROM tareas WHERE cliente_id=$c AND llave=$l", ("$c", clienteId), ("$l", llave));
+        using var r = comando.ExecuteReader();
         return r.Read() ? (r.GetString(0), (EstadoTarea)r.GetInt32(1), r.IsDBNull(2) ? null : r.GetString(2)) : null;
     }
 
@@ -291,16 +291,16 @@ public sealed class Almacen
     public TareaAsignada? TomarTarea(string clienteId, string empresa, string workerId, string? version = null, string? host = null)
     {
         RegistrarWorker(clienteId, workerId, empresa, version, host);
-        using var cn = Abrir();
-        using var cmd = Comando(
-            cn,
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
             """
             UPDATE tareas SET estado=1, intentos=intentos+1, iniciada=$ahora, worker_id=$w
             WHERE id = (SELECT id FROM tareas WHERE cliente_id=$c AND empresa=$e COLLATE NOCASE AND estado=0 ORDER BY creada, rowid LIMIT 1)
             RETURNING id, tipo, empresa, payload
             """,
             ("$ahora", Ahora()), ("$w", workerId), ("$c", clienteId), ("$e", empresa));
-        using var r = cmd.ExecuteReader();
+        using var r = comando.ExecuteReader();
         if (!r.Read())
         {
             return null;
@@ -328,20 +328,20 @@ public sealed class Almacen
 
     public TareaDto? ObtenerTarea(string clienteId, string tareaId)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, SeleccionTarea + " WHERE id=$id AND cliente_id=$c", ("$id", tareaId), ("$c", clienteId));
-        using var r = cmd.ExecuteReader();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, SeleccionTarea + " WHERE id=$id AND cliente_id=$c", ("$id", tareaId), ("$c", clienteId));
+        using var r = comando.ExecuteReader();
         return r.Read() ? LeerTarea(r) : null;
     }
 
     public IReadOnlyList<TareaDto> ListarTareas(string clienteId, EstadoTarea? estado, int limite)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(
-            cn,
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
             SeleccionTarea + " WHERE cliente_id=$c AND ($e IS NULL OR estado=$e) ORDER BY creada DESC, rowid DESC LIMIT $l",
             ("$c", clienteId), ("$e", estado is null ? null : (int)estado), ("$l", Math.Clamp(limite, 1, 200)));
-        using var r = cmd.ExecuteReader();
+        using var r = comando.ExecuteReader();
         var lista = new List<TareaDto>();
         while (r.Read())
         {
@@ -385,9 +385,9 @@ public sealed class Almacen
 
     public IReadOnlyList<WorkerDto> ListarWorkers(string clienteId, TimeSpan ventanaEnLinea)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, "SELECT id, empresa, ultima_vista, version, host FROM workers WHERE cliente_id=$c ORDER BY empresa, id", ("$c", clienteId));
-        using var r = cmd.ExecuteReader();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT id, empresa, ultima_vista, version, host FROM workers WHERE cliente_id=$c ORDER BY empresa, id", ("$c", clienteId));
+        using var r = comando.ExecuteReader();
         var lista = new List<WorkerDto>();
         while (r.Read())
         {
@@ -426,38 +426,38 @@ public sealed class Almacen
 
     private SqliteConnection Abrir()
     {
-        var cn = new SqliteConnection(_cadena);
-        cn.Open();
-        using var espera = cn.CreateCommand();
+        var conexion = new SqliteConnection(_cadena);
+        conexion.Open();
+        using var espera = conexion.CreateCommand();
         espera.CommandText = "PRAGMA busy_timeout=5000;";
         espera.ExecuteNonQuery();
-        return cn;
+        return conexion;
     }
 
-    private static SqliteCommand Comando(SqliteConnection cn, string sql, params (string Nombre, object? Valor)[] parametros)
+    private static SqliteCommand Comando(SqliteConnection conexion, string sql, params (string Nombre, object? Valor)[] parametros)
     {
-        var cmd = cn.CreateCommand();
-        cmd.CommandText = sql;
+        var comando = conexion.CreateCommand();
+        comando.CommandText = sql;
         foreach (var (nombre, valor) in parametros)
         {
-            cmd.Parameters.AddWithValue(nombre, valor ?? DBNull.Value);
+            comando.Parameters.AddWithValue(nombre, valor ?? DBNull.Value);
         }
 
-        return cmd;
+        return comando;
     }
 
     private int Ejecutar(string sql, params (string Nombre, object? Valor)[] parametros)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, sql, parametros);
-        return cmd.ExecuteNonQuery();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, sql, parametros);
+        return comando.ExecuteNonQuery();
     }
 
     private long Escalar(string sql, params (string Nombre, object? Valor)[] parametros)
     {
-        using var cn = Abrir();
-        using var cmd = Comando(cn, sql, parametros);
-        return Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, sql, parametros);
+        return Convert.ToInt64(comando.ExecuteScalar(), CultureInfo.InvariantCulture);
     }
 }
 

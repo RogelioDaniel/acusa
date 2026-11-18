@@ -18,8 +18,8 @@ public static class Correlacion
 
     /// <summary>Acepta el identificador que manda quien llama si es corto y legible; si no, genera uno.</summary>
     public static string Resolver(string? recibido) =>
-        recibido is { Length: > 0 and <= 64 } r && r.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':')
-            ? r
+        recibido is { Length: > 0 and <= 64 } valor && valor.All(caracter => char.IsAsciiLetterOrDigit(caracter) || caracter is '-' or '_' or '.' or ':')
+            ? valor
             : Guid.NewGuid().ToString("N")[..16];
 }
 
@@ -42,8 +42,8 @@ public static class Errores
     /// <summary>422 de una tarea que el worker terminó con error. Si viene un código del SDK de CONTPAQi, el mensaje se traduce.</summary>
     public static ErrorApi DeTarea(string? error, int? codigoSdk, string? tareaId)
     {
-        var (mensaje, tecnico) = ErroresSdk.Traducir(codigoSdk, error);
-        return Cuerpo(StatusCodes.Status422UnprocessableEntity, mensaje, tecnico is null ? [] : [tecnico],
+        var (mensaje, textoTecnico) = ErroresSdk.Traducir(codigoSdk, error);
+        return Cuerpo(StatusCodes.Status422UnprocessableEntity, mensaje, textoTecnico is null ? [] : [textoTecnico],
             codigoSdk is > 0 ? CodigosError.ErrorSdk : CodigosError.OperacionFallida, codigoSdk, tareaId);
     }
 
@@ -62,63 +62,63 @@ public static class Errores
     };
 
     /// <summary>La petición ya se registra en <see cref="Usar"/>; el registro propio de ASP.NET Core repetiría la ruta con su query string.</summary>
-    public static void SinRuido(ILoggingBuilder logs)
+    public static void SinRuido(ILoggingBuilder constructorDeLogs)
     {
-        logs.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
-        logs.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
+        constructorDeLogs.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+        constructorDeLogs.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
     }
 
     /// <summary>
     /// Middleware: asigna el identificador de correlación, registra cada petición (sin cabeceras, cuerpo ni query string) y
     /// convierte en el formato único tanto las excepciones no controladas como las respuestas de error que salieron sin cuerpo.
     /// </summary>
-    public static void Usar(WebApplication app)
+    public static void Usar(WebApplication aplicacion)
     {
-        var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Acusa.Peticion");
-        app.Use(async (http, siguiente) =>
+        var registro = aplicacion.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Acusa.Peticion");
+        aplicacion.Use(async (contexto, siguiente) =>
         {
-            var id = Correlacion.Resolver(http.Request.Headers[Correlacion.Cabecera].FirstOrDefault());
-            Correlacion.Actual = id;
-            http.TraceIdentifier = id;
-            http.Response.OnStarting(() =>
+            var idCorrelacion = Correlacion.Resolver(contexto.Request.Headers[Correlacion.Cabecera].FirstOrDefault());
+            Correlacion.Actual = idCorrelacion;
+            contexto.TraceIdentifier = idCorrelacion;
+            contexto.Response.OnStarting(() =>
             {
-                http.Response.Headers[Correlacion.Cabecera] = id;
+                contexto.Response.Headers[Correlacion.Cabecera] = idCorrelacion;
                 return Task.CompletedTask;
             });
 
-            using var _ = log.BeginScope("IdCorrelacion:{IdCorrelacion}", id);
-            var reloj = Stopwatch.StartNew();
+            using var ambito = registro.BeginScope("IdCorrelacion:{IdCorrelacion}", idCorrelacion);
+            var cronometro = Stopwatch.StartNew();
             try
             {
                 await siguiente();
             }
-            catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)
+            catch (OperationCanceledException) when (contexto.RequestAborted.IsCancellationRequested)
             {
-                log.LogInformation("{Metodo} {Ruta} cancelada por quien llama ({Ms} ms)", http.Request.Method, http.Request.Path.Value, reloj.ElapsedMilliseconds);
+                registro.LogInformation("{Metodo} {Ruta} cancelada por quien llama ({Ms} ms)", contexto.Request.Method, contexto.Request.Path.Value, cronometro.ElapsedMilliseconds);
                 return;
             }
-            catch (Exception ex)
+            catch (Exception excepcion)
             {
-                log.LogError("Error no controlado en {Metodo} {Ruta}: {Tipo}: {Mensaje}{Traza}", http.Request.Method, http.Request.Path.Value,
-                    ex.GetType().Name, Redaccion.Limpiar(ex.Message), Environment.NewLine + Redaccion.Limpiar(ex.StackTrace));
-                if (!http.Response.HasStarted)
+                registro.LogError("Error no controlado en {Metodo} {Ruta}: {Tipo}: {Mensaje}{Traza}", contexto.Request.Method, contexto.Request.Path.Value,
+                    excepcion.GetType().Name, Redaccion.Limpiar(excepcion.Message), Environment.NewLine + Redaccion.Limpiar(excepcion.StackTrace));
+                if (!contexto.Response.HasStarted)
                 {
-                    http.Response.Clear();
-                    http.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    await http.Response.WriteAsJsonAsync(Cuerpo(500, MensajePorEstado(500)));
+                    contexto.Response.Clear();
+                    contexto.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await contexto.Response.WriteAsJsonAsync(Cuerpo(500, MensajePorEstado(500)));
                 }
             }
 
-            var r = http.Response;
-            var ruta = http.Request.Path.Value ?? string.Empty;
+            var respuesta = contexto.Response;
+            var ruta = contexto.Request.Path.Value ?? string.Empty;
             var esApi = ruta.StartsWith("/api", StringComparison.OrdinalIgnoreCase) || ruta.StartsWith("/admin", StringComparison.OrdinalIgnoreCase);
-            if (esApi && !r.HasStarted && r.StatusCode >= 400 && (r.ContentLength ?? 0) == 0 && string.IsNullOrEmpty(r.ContentType))
+            if (esApi && !respuesta.HasStarted && respuesta.StatusCode >= 400 && (respuesta.ContentLength ?? 0) == 0 && string.IsNullOrEmpty(respuesta.ContentType))
             {
-                await r.WriteAsJsonAsync(Cuerpo(r.StatusCode, MensajePorEstado(r.StatusCode)));
+                await respuesta.WriteAsJsonAsync(Cuerpo(respuesta.StatusCode, MensajePorEstado(respuesta.StatusCode)));
             }
 
-            var nivel = ruta == "/health" ? LogLevel.Debug : r.StatusCode >= 500 ? LogLevel.Error : r.StatusCode >= 400 ? LogLevel.Warning : LogLevel.Information;
-            log.Log(nivel, "{Metodo} {Ruta} -> {Estado} ({Ms} ms)", http.Request.Method, ruta, r.StatusCode, reloj.ElapsedMilliseconds);
+            var nivel = ruta == "/health" ? LogLevel.Debug : respuesta.StatusCode >= 500 ? LogLevel.Error : respuesta.StatusCode >= 400 ? LogLevel.Warning : LogLevel.Information;
+            registro.Log(nivel, "{Metodo} {Ruta} -> {Estado} ({Ms} ms)", contexto.Request.Method, ruta, respuesta.StatusCode, cronometro.ElapsedMilliseconds);
         });
     }
 }
