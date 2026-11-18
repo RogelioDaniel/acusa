@@ -21,7 +21,7 @@ public sealed class ErroresSdkTests
     [InlineData(120115, "almacén")]
     [InlineData(120146, "concepto")]
     [InlineData(120513, "lista de precios")]
-    public void Un_codigo_conocido_se_explica_y_conserva_el_texto_tecnico(int codigo, string menciona)
+    public void Traducir_CodigoConocido_ExplicaYConservaTextoTecnico(int codigo, string menciona)
     {
         var (mensaje, tecnico) = ErroresSdk.Traducir(codigo, $"fAltaMovimiento = {codigo}: texto del SDK");
 
@@ -31,7 +31,7 @@ public sealed class ErroresSdkTests
     }
 
     [Fact]
-    public void Un_codigo_desconocido_quita_el_nombre_de_la_funcion_y_conserva_el_texto_del_sdk()
+    public void Traducir_CodigoDesconocido_QuitaNombreDeFuncionYConservaTextoDelSdk()
     {
         var (mensaje, tecnico) = ErroresSdk.Traducir(999999, "fGuardaDocumento = 999999: El documento está bloqueado.");
 
@@ -43,7 +43,7 @@ public sealed class ErroresSdkTests
     [InlineData(null, "Falló algo.", "Falló algo.")]
     [InlineData(0, "Falló algo.", "Falló algo.")]
     [InlineData(null, null, "La operación no se completó.")]
-    public void Sin_codigo_del_sdk_el_mensaje_no_cambia(int? codigo, string? texto, string esperado)
+    public void Traducir_SinCodigoDelSdk_DejaElMensajeSinCambios(int? codigo, string? texto, string esperado)
     {
         var (mensaje, tecnico) = ErroresSdk.Traducir(codigo, texto);
 
@@ -52,7 +52,7 @@ public sealed class ErroresSdkTests
     }
 
     [Fact]
-    public void El_error_de_una_tarea_con_codigo_del_sdk_lleva_codigo_error_sdk_y_el_id_de_la_tarea()
+    public void DeTarea_ConCodigoDelSdk_UsaCodigoErrorSdkYTarea()
     {
         var error = Errores.DeTarea("fAltaMovimiento = 120115: no existe", 120115, "t-1");
 
@@ -63,7 +63,7 @@ public sealed class ErroresSdkTests
     }
 
     [Fact]
-    public void El_error_de_una_tarea_sin_codigo_del_sdk_es_operacion_fallida()
+    public void DeTarea_SinCodigoDelSdk_UsaOperacionFallida()
     {
         var error = Errores.DeTarea("El payload no tiene el formato esperado.", null, "t-2");
 
@@ -83,7 +83,7 @@ public sealed class RedaccionTests
     [InlineData("{\"contrasena\":\"claveFalsa\"}", "claveFalsa")]
     [InlineData("claveCertificado: claveFalsa", "claveFalsa")]
     [InlineData("csdPassword=\"con espacios y mas\"", "con espacios")]
-    public void Oculta_llaves_tokens_contrasenas_y_datos_del_certificado(string texto, string secreto)
+    public void Limpiar_TextoConSecreto_OcultaElSecreto(string texto, string secreto)
     {
         var limpio = Redaccion.Limpiar(texto);
 
@@ -92,7 +92,7 @@ public sealed class RedaccionTests
     }
 
     [Fact]
-    public void Un_texto_sin_secretos_no_cambia()
+    public void Limpiar_TextoSinSecretos_NoCambiaElTexto()
     {
         const string texto = "Tarea 123: documento.crear (EMPRESA1) completada en 840 ms";
 
@@ -140,17 +140,17 @@ public sealed class ErroresApiTests : IDisposable
         return peticion;
     }
 
-    private static async Task<(ErrorApi Error, string Crudo)> Leer(HttpResponseMessage respuesta)
+    private static async Task<(ErrorApi Error, string Crudo)> LeerErrorAsync(HttpResponseMessage respuesta)
     {
         var crudo = await respuesta.Content.ReadAsStringAsync();
         return (JsonSerializer.Deserialize<ErrorApi>(crudo, new JsonSerializerOptions(JsonSerializerDefaults.Web))!, crudo);
     }
 
     [Fact]
-    public async Task Sin_credenciales_responde_401_con_el_formato_estandar()
+    public async Task ObtenerEmpresas_SinCredenciales_Responde401ConFormatoEstandar()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/empresas", conLlave: false));
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
         Assert.Equal(CodigosError.NoAutorizado, error.Codigo);
@@ -159,29 +159,29 @@ public sealed class ErroresApiTests : IDisposable
     }
 
     [Fact]
-    public async Task El_id_de_correlacion_del_cuerpo_es_el_de_la_cabecera()
+    public async Task ObtenerEmpresas_SinCredenciales_IdCorrelacionDelCuerpoIgualAlDeLaCabecera()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/empresas", conLlave: false));
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(error.IdCorrelacion, Assert.Single(respuesta.Headers.GetValues(Correlacion.Cabecera)));
         Assert.False(string.IsNullOrEmpty(error.IdCorrelacion));
     }
 
     [Fact]
-    public async Task Si_quien_llama_manda_un_id_de_correlacion_valido_se_conserva()
+    public async Task ObtenerCliente_ConIdDeCorrelacionValido_LoConserva()
     {
         var peticion = Peticion(HttpMethod.Get, "/api/empresas/NOEXISTE/clientes/X");
         peticion.Headers.Add(Correlacion.Cabecera, "sistema-cliente-42");
         var respuesta = await _http.SendAsync(peticion);
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal("sistema-cliente-42", error.IdCorrelacion);
         Assert.Equal("sistema-cliente-42", respuesta.Headers.GetValues(Correlacion.Cabecera).Single());
     }
 
     [Fact]
-    public async Task Un_id_de_correlacion_con_caracteres_raros_se_reemplaza()
+    public async Task ObtenerEmpresas_IdDeCorrelacionConCaracteresInvalidos_LoReemplaza()
     {
         var peticion = Peticion(HttpMethod.Get, "/api/empresas", conLlave: false);
         peticion.Headers.TryAddWithoutValidation(Correlacion.Cabecera, "<script>alert(1)</script>");
@@ -191,10 +191,10 @@ public sealed class ErroresApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Una_empresa_que_no_es_del_cliente_responde_404()
+    public async Task ObtenerCliente_EmpresaAjena_Responde404()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/empresas/AJENA/clientes/X"));
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
         Assert.Equal(CodigosError.NoEncontrado, error.Codigo);
@@ -202,10 +202,10 @@ public sealed class ErroresApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Una_validacion_responde_422_con_un_detalle_por_campo()
+    public async Task CrearProducto_CuerpoVacio_Responde422ConUnDetallePorCampo()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos", new { }));
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal((HttpStatusCode)422, respuesta.StatusCode);
         Assert.Equal(CodigosError.Validacion, error.Codigo);
@@ -215,22 +215,22 @@ public sealed class ErroresApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Un_cuerpo_que_no_es_json_responde_400()
+    public async Task CrearProducto_CuerpoQueNoEsJson_Responde400()
     {
         var peticion = Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos");
         peticion.Content = new StringContent("esto no es json", System.Text.Encoding.UTF8, "application/json");
         var respuesta = await _http.SendAsync(peticion);
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
         Assert.Equal(CodigosError.SolicitudInvalida, error.Codigo);
     }
 
     [Fact]
-    public async Task Una_contrasena_en_el_cuerpo_se_rechaza_sin_repetirla_en_la_respuesta()
+    public async Task CrearProducto_ContrasenaEnElCuerpo_Responde400SinRepetirla()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos", new { codigo = "P1", password = "claveFalsa" }));
-        var (error, crudo) = await Leer(respuesta);
+        var (error, crudo) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
         Assert.Equal(CodigosError.SolicitudInvalida, error.Codigo);
@@ -238,10 +238,10 @@ public sealed class ErroresApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Una_operacion_que_no_existe_responde_400()
+    public async Task Ejecutar_OperacionInexistente_Responde400()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/sdk/execute", new { tipoProceso = "no.existe", empresa = "EMPRESA1" }));
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
         Assert.Equal(CodigosError.SolicitudInvalida, error.Codigo);
@@ -249,20 +249,20 @@ public sealed class ErroresApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Una_ruta_de_la_api_que_no_existe_responde_404_con_el_formato_estandar()
+    public async Task ObtenerRutaInexistente_Responde404ConFormatoEstandar()
     {
         var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/no-existe"));
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
         Assert.Equal(CodigosError.NoEncontrado, error.Codigo);
     }
 
     [Fact]
-    public async Task El_login_incorrecto_responde_401_con_el_formato_estandar()
+    public async Task Login_CredencialesIncorrectas_Responde401()
     {
         var respuesta = await _http.PostAsJsonAsync("/api/auth/login", new { correo = "nadie@ejemplo.com", contrasena = "incorrecta123" });
-        var (error, _) = await Leer(respuesta);
+        var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
         Assert.Equal(CodigosError.NoAutorizado, error.Codigo);
@@ -320,7 +320,7 @@ public sealed class RegistroDeLogsTests
     }
 
     [Fact]
-    public async Task Cada_linea_de_la_peticion_lleva_el_id_de_correlacion()
+    public async Task Peticion_Atendida_RegistraIdDeCorrelacion()
     {
         var (aplicacion, captura, cliente) = await Arrancar();
         await using var _ = aplicacion;
@@ -333,7 +333,7 @@ public sealed class RegistroDeLogsTests
     }
 
     [Fact]
-    public async Task El_log_no_guarda_cabeceras_cuerpo_ni_query_string()
+    public async Task Peticion_ConCabecerasYQueryString_NoRegistraSecretos()
     {
         var (aplicacion, captura, cliente) = await Arrancar();
         await using var _ = aplicacion;
@@ -348,7 +348,7 @@ public sealed class RegistroDeLogsTests
     }
 
     [Fact]
-    public async Task Una_excepcion_responde_500_estandar_y_el_log_no_contiene_secretos()
+    public async Task Peticion_ConExcepcion_Responde500SinSecretosEnRespuestaNiLog()
     {
         var (aplicacion, captura, cliente) = await Arrancar();
         await using var _ = aplicacion;
@@ -368,7 +368,7 @@ public sealed class RegistroDeLogsTests
     }
 
     [Fact]
-    public async Task Un_error_de_cliente_se_registra_como_aviso_y_uno_de_servidor_como_error()
+    public async Task Peticion_Fallida_RegistraAvisoParaClienteYErrorParaServidor()
     {
         var (aplicacion, captura, cliente) = await Arrancar();
         await using var _ = aplicacion;
