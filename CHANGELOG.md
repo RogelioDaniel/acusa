@@ -1,5 +1,16 @@
 # Changelog
 
+## Sin publicar
+
+- Formato único de error en toda la API: `{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }`, con códigos estables
+  (`validacion`, `no_autorizado`, `no_encontrado`, `error_sdk`, `error_interno`, …) y estados HTTP consistentes. Una excepción no
+  controlada responde `500` con el mismo formato.
+- Los errores del SDK de CONTPAQi se traducen a un mensaje que explica qué corregir; el texto original del SDK queda en `detalles` y el
+  código en `codigoSdk`.
+- Cada respuesta incluye `X-Correlation-Id` (se conserva el que envía quien llama). Central escribe logs JSON, una línea por evento, con
+  el identificador de correlación; el worker escribe `worker-AAAAMMDD.log` en JSON.
+- Los logs ocultan llaves de API y de worker, tokens, contraseñas y datos del certificado; no registran cabeceras, cuerpos ni query strings.
+
 ## 1.1.0 (2026-11-13)
 
 - API REST por recursos bajo `/api/empresas/{empresa}`: clientes (con direcciones), productos, documentos, timbrado individual y por

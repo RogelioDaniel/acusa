@@ -370,7 +370,7 @@ public partial class Asistente : Window
         try
         {
             var doc = await r.Content.ReadFromJsonAsync<JsonElement>();
-            if (doc.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } t) return t;
+            if (doc.TryGetProperty("mensaje", out var e) && e.GetString() is { Length: > 0 } t) return t;
         }
         catch { /* sin cuerpo legible */ }
 

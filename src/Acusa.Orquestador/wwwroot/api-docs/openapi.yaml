@@ -9,7 +9,9 @@ info:
 
     **Flujo de una factura.** Crear el cliente y el producto; crear el documento con sus movimientos; timbrarlo (devuelve el UUID y el XML en texto plano); consultar el XML y el PDF; cancelarlo si hace falta.
 
-    **Respuesta.** Cada petición espera al worker hasta 60 segundos. Si responde, la misma respuesta trae el resultado (`200` o `201`); si falla en Comercial, `422` con el detalle; si pasa el tiempo, `202` con el identificador de la tarea, que se consulta en `GET /api/sdk/tasks/{tareaId}`. Los errores de validación responden `422` con `{ "errors": [ … ] }`.
+    **Respuesta.** Cada petición espera al worker hasta 60 segundos. Si responde, la misma respuesta trae el resultado (`200` o `201`); si falla en Comercial, `422` con el error; si pasa el tiempo, `202` con el identificador de la tarea, que se consulta en `GET /api/sdk/tasks/{tareaId}`.
+
+    **Errores.** Toda respuesta de error tiene el mismo cuerpo: `{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }`. `codigo` es estable para programar contra él (`solicitud_invalida`, `no_autorizado`, `no_encontrado`, `conflicto`, `validacion`, `operacion_fallida`, `error_sdk`, `demasiados_intentos`, `error_interno`); `mensaje` es el texto para la persona; `detalles` lista cada validación que falló. Cuando CONTPAQi Comercial rechaza la operación, `codigo` es `error_sdk`, `codigoSdk` trae el código del SDK, `mensaje` lo explica y `detalles` conserva el texto original del SDK. Cada respuesta incluye la cabecera `X-Correlation-Id`, igual a `idCorrelacion`; si manda esa cabecera en la petición (hasta 64 caracteres: letras, números, guion, guion bajo, punto y dos puntos), Acusa la conserva. Indique ese identificador al reportar un problema: es el mismo que aparece en los logs.
 
     **Reintentos.** Con la cabecera `Idempotency-Key` (hasta 100 caracteres), repetir una petición de escritura devuelve el resultado original y no duplica el documento.
 
@@ -435,21 +437,52 @@ components:
               tareaId: { type: string }
               estado: { type: string, example: EnProceso }
     Fallo:
-      description: Datos inválidos (`errors`) o la operación falló en Comercial (`error`, `codigoSdk`).
+      description: Los datos no son válidos (`validacion`, con un elemento de `detalles` por campo) o la operación falló en Comercial (`error_sdk` u `operacion_fallida`, con `codigoSdk` y `tareaId`).
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
       content:
         application/json:
-          schema:
-            type: object
-            properties:
-              errors: { type: array, items: { type: string } }
-              error: { type: string }
-              codigoSdk: { type: integer, nullable: true }
-              tareaId: { type: string }
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            validacion:
+              summary: Validación
+              value: { codigo: validacion, mensaje: La solicitud tiene errores de validación., detalles: ['Codigo no puede estar vacio', 'Unidad base no puede estar vacio'], idCorrelacion: 9f3c1a7e52b04d68 }
+            sdk:
+              summary: Error de CONTPAQi Comercial
+              value: { codigo: error_sdk, mensaje: El almacén indicado en el movimiento no existe en la empresa. Use el código de un almacén registrado en CONTPAQi Comercial., detalles: ['fAltaMovimiento = 120115: El almacén solicitado no existe.'], idCorrelacion: 9f3c1a7e52b04d68, codigoSdk: 120115, tareaId: 3f2c8a10 }
     NoAutorizado:
       description: Falta la cabecera Authorization o la llave no es válida.
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { codigo: no_autorizado, mensaje: Falta la cabecera Authorization (Bearer <llave de API o token>) o la llave no es válida., detalles: [], idCorrelacion: 9f3c1a7e52b04d68 }
     EmpresaNoRegistrada:
       description: La empresa no está registrada para su cuenta.
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { codigo: no_encontrado, mensaje: "La empresa 'EMPRESA1' no está registrada para este cliente.", detalles: [], idCorrelacion: 9f3c1a7e52b04d68 }
+  headers:
+    XCorrelationId:
+      description: Identificador de correlación de la petición; es el mismo `idCorrelacion` del cuerpo de error y el de los logs.
+      schema: { type: string, example: 9f3c1a7e52b04d68 }
   schemas:
+    Error:
+      type: object
+      required: [codigo, mensaje, detalles]
+      properties:
+        codigo:
+          type: string
+          enum: [solicitud_invalida, no_autorizado, no_encontrado, metodo_no_permitido, conflicto, validacion, operacion_fallida, error_sdk, demasiados_intentos, no_implementado, error_interno]
+        mensaje: { type: string, description: 'Texto para la persona.' }
+        detalles: { type: array, items: { type: string }, description: 'Una entrada por validación que falló; con `error_sdk`, el texto original del SDK.' }
+        idCorrelacion: { type: string, description: 'Mismo valor de la cabecera `X-Correlation-Id`.' }
+        codigoSdk: { type: integer, description: 'Código de error del SDK de CONTPAQi, cuando el rechazo vino de Comercial.' }
+        tareaId: { type: string, description: 'Tarea en la que falló la operación; se consulta en `GET /api/sdk/tasks/{tareaId}`.' }
     ClienteNuevo:
       type: object
       required: [codigo, razonSocial, rfc, codigoPostal]

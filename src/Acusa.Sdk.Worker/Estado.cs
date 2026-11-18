@@ -97,6 +97,12 @@ public sealed class BitacoraProvider : ILoggerProvider
         _carpeta = carpetaLogs;
     }
 
+    private static readonly System.Text.Json.JsonSerializerOptions JsonLog = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
     public ILogger CreateLogger(string categoria) => new Registro(this, categoria);
 
     public IReadOnlyList<LineaBitacora> Desde(long n) => [.. _lineas.Where(l => l.N > n)];
@@ -105,8 +111,9 @@ public sealed class BitacoraProvider : ILoggerProvider
     {
     }
 
-    private void Agregar(string nivel, string categoria, string mensaje)
+    private void Agregar(string nivel, string categoria, string mensaje, IReadOnlyDictionary<string, string>? propiedades = null)
     {
+        mensaje = Acusa.Contrato.Redaccion.Limpiar(mensaje);
         var origen = categoria.Contains('.') ? categoria[(categoria.LastIndexOf('.') + 1)..] : categoria;
         var linea = new LineaBitacora(Interlocked.Increment(ref _contador), DateTime.Now, nivel, origen, mensaje);
         _lineas.Enqueue(linea);
@@ -119,8 +126,16 @@ public sealed class BitacoraProvider : ILoggerProvider
             lock (_archivo)
             {
                 Directory.CreateDirectory(_carpeta);
-                File.AppendAllText(Path.Combine(_carpeta, $"worker-{linea.Hora:yyyyMMdd}.log"),
-                    $"{linea.Hora:HH:mm:ss} {nivel,-5} {origen}: {mensaje}{Environment.NewLine}", Encoding.UTF8);
+                // Una línea JSON por evento: hora UTC, nivel, origen, mensaje y las propiedades del mensaje (por ejemplo, el id de la tarea).
+                var registro = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    hora = linea.Hora.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture),
+                    nivel,
+                    origen,
+                    mensaje,
+                    propiedades,
+                }, JsonLog);
+                File.AppendAllText(Path.Combine(_carpeta, $"worker-{linea.Hora:yyyyMMdd}.log"), registro + Environment.NewLine, Encoding.UTF8);
             }
         }
         catch (IOException)
@@ -147,7 +162,19 @@ public sealed class BitacoraProvider : ILoggerProvider
             }
 
             var texto = formato(estado, ex) + (ex is null ? string.Empty : $" ({ex.GetType().Name}: {ex.Message})");
-            padre.Agregar(nivel switch { LogLevel.Warning => "AVISO", LogLevel.Error or LogLevel.Critical => "ERROR", _ => "INFO" }, categoria, texto);
+            Dictionary<string, string>? propiedades = null;
+            if (estado is IEnumerable<KeyValuePair<string, object?>> pares)
+            {
+                foreach (var (clave, valor) in pares)
+                {
+                    if (clave != "{OriginalFormat}" && valor is not null)
+                    {
+                        (propiedades ??= [])[clave] = Acusa.Contrato.Redaccion.Limpiar(Convert.ToString(valor, System.Globalization.CultureInfo.InvariantCulture));
+                    }
+                }
+            }
+
+            padre.Agregar(nivel switch { LogLevel.Warning => "AVISO", LogLevel.Error or LogLevel.Critical => "ERROR", _ => "INFO" }, categoria, texto, propiedades);
         }
     }
 }

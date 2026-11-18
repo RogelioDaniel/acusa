@@ -1,3 +1,4 @@
+using Acusa.Contrato;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -65,7 +66,11 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
     private static int? Ent(JsonNode? n) =>
         int.TryParse(Txt(n), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null;
 
-    private static Resp Error(int status, params string[] errores) => new(status, new { errors = errores });
+    private static Resp Error(int status, params string[] errores) =>
+        new(status, errores.Length == 1 ? Errores.Cuerpo(status, errores[0]) : Errores.Cuerpo(status, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
+
+    /// <summary>422 de una orden que el worker terminó con error (el código del SDK de CONTPAQi se traduce).</summary>
+    private static Resp ErrorOrden(ResultadoOrden r, string porOmision) => new(422, Errores.DeTarea(r.Error ?? porOmision, r.CodigoSdk, r.TareaId));
 
     private static Resp Mensaje(int status, string mensaje, object? extra = null) =>
         new(status, extra is null ? new { message = mensaje } : new { message = mensaje, datos = extra });
@@ -142,7 +147,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         if (string.IsNullOrWhiteSpace(Txt(d["social_reason"]))) errores.Add("Social reason can't be blank");
         if (string.IsNullOrWhiteSpace(Txt(d["rfc"]))) errores.Add("Rfc can't be blank");
         if (string.IsNullOrWhiteSpace(Txt(d["database_name"]))) errores.Add("Database name can't be blank");
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
 
         var nombre = Txt(d["database_name"])!.Trim();
         almacen.AgregarEmpresa(clienteId, nombre);
@@ -196,7 +201,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         if (string.IsNullOrWhiteSpace(Txt(d["rfc"]))) errores.Add("Rfc can't be blank");
         if (Ent(d["client_type"]) is null) errores.Add("Client type can't be blank");
         if (Num(d["credit_limit"]) is null) errores.Add("Credit limit can't be blank");
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
 
         var empresa = EmpresaDe(clienteId, null);
         if (empresa is null) return Error(422, "No hay una empresa de CONTPAQi registrada para este cliente");
@@ -217,7 +222,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
 
         doc["task_id"] = r.TareaId; doc["status"] = Estado(r); doc["error"] = r.Ok ? null : r.Error;
         store.Actualizar(Compania, clienteId, id, doc);
-        return r.Ok || r.EnCurso ? new(201, new { id, code = Txt(doc["code"]), social_reason = Txt(doc["social_reason"]), rfc = Txt(doc["rfc"]), task_id = r.TareaId, status = Estado(r) }) : Error(422, r.Error ?? "Company could not be created");
+        return r.Ok || r.EnCurso ? new(201, new { id, code = Txt(doc["code"]), social_reason = Txt(doc["social_reason"]), rfc = Txt(doc["rfc"]), task_id = r.TareaId, status = Estado(r) }) : ErrorOrden(r, "Company could not be created");
     }
 
     public async Task<Resp> ActualizarCompaniaAsync(string clienteId, int id, JsonNode? cuerpo, CancellationToken ct)
@@ -236,7 +241,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         {
             codigo = Txt(c["code"]), razonSocial = razon, rfc, limiteCredito = limite,
         }, null, ct);
-        if (!r.Ok && !r.EnCurso) return Error(422, r.Error ?? "Company could not be updated");
+        if (!r.Ok && !r.EnCurso) return ErrorOrden(r, "Company could not be updated");
 
         if (razon is not null) c["social_reason"] = razon;
         if (rfc is not null) c["rfc"] = rfc;
@@ -296,7 +301,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         }, null, ct);
         a["task_id"] = r.TareaId; a["status"] = Estado(r); a["error"] = r.Ok ? null : r.Error;
         store.Actualizar(Direccion, clienteId, id, a);
-        return r.Ok || r.EnCurso ? new(r.Ok ? 201 : 202, new { message = "success", id, task_id = r.TareaId, status = Estado(r) }) : Error(422, r.Error ?? "Address could not be saved");
+        return r.Ok || r.EnCurso ? new(r.Ok ? 201 : 202, new { message = "success", id, task_id = r.TareaId, status = Estado(r) }) : ErrorOrden(r, "Address could not be saved");
     }
 
     public async Task<Resp> CrearDireccionAsync(string clienteId, int companiaId, JsonNode? cuerpo, CancellationToken ct)
@@ -306,7 +311,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         var d = Envuelto(cuerpo, "address");
         if (d is null) return Error(422, "Address can't be blank");
         var errores = ValidarDireccion(d, false);
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
 
         var a = new JsonObject
         {
@@ -326,7 +331,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         var d = Envuelto(cuerpo, "address");
         if (d is null) return Error(422, "Address can't be blank");
         var errores = ValidarDireccion(d, true);
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
         foreach (var campo in new[] { "street", "neighborhood", "zip_code", "city", "state", "country" })
         {
             if (Txt(d[campo]) is { Length: > 0 } v) a[campo] = v.Trim();
@@ -391,7 +396,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         if (Ent(d["product_type"]) is null) errores.Add("Product type can't be blank");
         var emisoraId = Ent(d["issuing_company_id"]);
         if (emisoraId is not null && store.Obtener(Emisora, clienteId, emisoraId.Value) is null) errores.Add("Issuing company not found");
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
 
         var empresa = EmpresaDe(clienteId, emisoraId);
         if (empresa is null) return Error(422, "No hay una empresa de CONTPAQi registrada para este cliente");
@@ -413,7 +418,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
 
         doc["task_id"] = r.TareaId; doc["status"] = Estado(r); doc["error"] = r.Ok ? null : r.Error;
         store.Actualizar(Producto, clienteId, id, doc);
-        return r.Ok || r.EnCurso ? new(201, new { id, code = Txt(doc["code"]), name = Txt(doc["name"]), task_id = r.TareaId, status = Estado(r) }) : Error(422, r.Error ?? "Product could not be created");
+        return r.Ok || r.EnCurso ? new(201, new { id, code = Txt(doc["code"]), name = Txt(doc["name"]), task_id = r.TareaId, status = Estado(r) }) : ErrorOrden(r, "Product could not be created");
     }
 
     public async Task<Resp> ActualizarProductoAsync(string clienteId, int id, JsonNode? cuerpo, CancellationToken ct)
@@ -434,7 +439,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         {
             codigo = Txt(p["code"]), nombre, descripcion = desc, precio1 = precio, claveSat = clave, textosExtra = textos.Count > 0 ? textos : null,
         }, null, ct);
-        if (!r.Ok && !r.EnCurso) return Error(422, r.Error ?? "Product could not be updated");
+        if (!r.Ok && !r.EnCurso) return ErrorOrden(r, "Product could not be updated");
 
         if (nombre is not null) p["name"] = nombre;
         if (desc is not null) p["description"] = desc;
@@ -577,7 +582,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
             errores.AddRange(ValidarMovimiento(clienteId, movimientos[i], false).Select(e => $"Movement {i + 1}: {e}"));
         }
 
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
 
         var f = new JsonObject
         {
@@ -602,7 +607,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         var d = Envuelto(cuerpo, "invoice");
         if (d is null) return Error(422, "Invoice can't be blank");
         var errores = ValidarFactura(clienteId, d, true);
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
         foreach (var campo in new[] { "concept", "series", "invoice_date", "client_code", "payment_method", "cfdi", "tax_regime" })
         {
             if (Txt(d[campo]) is { Length: > 0 } v) f[campo] = campo is "series" or "client_code" or "cfdi" ? v.Trim().ToUpperInvariant() : v.Trim();
@@ -652,7 +657,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
             store.Actualizar(Factura, clienteId, id, f);
             return r.EnCurso
                 ? new Resp(202, new { message = "Stamping invoice in progress", id, task_id = r.TareaId })
-                : Error(422, r.Error ?? $"{paso} failed");
+                : ErrorOrden(r, $"{paso} failed");
         }
 
         var empresaCompania = Txt(compania["empresa"]) ?? empresa;
@@ -760,7 +765,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
             if (!r.EnCurso) f["intento_cancelar"] = (Ent(f["intento_cancelar"]) ?? 0) + 1;
             f["error_message"] = r.Error;
             store.Actualizar(Factura, clienteId, id, f);
-            return r.EnCurso ? new(202, new { message = "Canceling invoice in progress", id, task_id = r.TareaId }) : Error(422, r.Error ?? "Cancellation failed");
+            return r.EnCurso ? new(202, new { message = "Canceling invoice in progress", id, task_id = r.TareaId }) : ErrorOrden(r, "Cancellation failed");
         }
 
         f["sat_status"] = "canceled"; f["cancellation_reason"] = motivo.Trim(); f["error_message"] = null;
@@ -781,7 +786,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         {
             concepto = Txt(f["concept"]), serie = Txt(f["series"]), folio = Num(f["folio"]), formato, incluirContenido = true,
         }, null, ct);
-        if (!r.Ok) return r.EnCurso ? new(202, new { message = "File request in progress", task_id = r.TareaId }) : Error(422, r.Error ?? "File could not be retrieved");
+        if (!r.Ok) return r.EnCurso ? new(202, new { message = "File request in progress", task_id = r.TareaId }) : ErrorOrden(r, "File could not be retrieved");
 
         var archivos = r.Datos is { } d && d.TryGetProperty("archivos", out var a) && a.ValueKind == JsonValueKind.Array ? a.EnumerateArray().ToList() : [];
         var archivo = archivos.FirstOrDefault(x => x.TryGetProperty("tipo", out var t) && string.Equals(t.GetString(), formato, StringComparison.OrdinalIgnoreCase));
@@ -816,7 +821,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         if (!FacturaEditable(clienteId, facturaId, out var f))
             return f is null ? NoExiste("Invoice") : Error(422, "Movements can only be added to a draft invoice");
         var errores = ValidarMovimiento(clienteId, d, false);
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
         var m = NuevaPartida(d, facturaId.Value);
         var id = store.Insertar(Movimiento, clienteId, m);
         return new(201, MovimientoDto(clienteId, m));
@@ -830,7 +835,7 @@ public sealed class FacturacionServicio(DocStore store, Almacen almacen, IEjecut
         var d = Envuelto(cuerpo, "movement");
         if (d is null) return Error(422, "Movement can't be blank");
         var errores = ValidarMovimiento(clienteId, d, true);
-        if (errores.Count > 0) return new(422, new { errors = errores });
+        if (errores.Count > 0) return new(422, Errores.Cuerpo(422, "La solicitud tiene errores de validación.", errores, CodigosError.Validacion));
         if (Txt(d["product_code"]) is { Length: > 0 } pc) m["product_code"] = pc.Trim().ToUpperInvariant();
         if (Num(d["quantity"]) is { } q) m["quantity"] = q;
         if (Num(d["price"]) is { } pr) m["price"] = pr;

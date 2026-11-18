@@ -64,8 +64,12 @@ public sealed class FacturacionRutasTests : IDisposable
     private static JsonElement Elemento(object? cuerpo) => JsonSerializer.SerializeToElement(cuerpo);
 
     /// <summary>Los mensajes de error ya decodificados (el JSON escribe el apóstrofo como ').</summary>
-    private static string Errores(object? cuerpo) =>
-        string.Join(" | ", Elemento(cuerpo).GetProperty("errors").EnumerateArray().Select(e => e.GetString()));
+    private static string Errores(object? cuerpo)
+    {
+        var e = JsonSerializer.SerializeToElement(cuerpo, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var detalles = e.GetProperty("detalles").EnumerateArray().Select(x => x.GetString()).ToList();
+        return detalles.Count > 0 ? string.Join(" | ", detalles) : e.GetProperty("mensaje").GetString()!;
+    }
 
     private int Emisora(string db = "adEMPRESA_DE_PRUEBA")
     {

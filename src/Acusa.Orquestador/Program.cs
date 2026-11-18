@@ -5,11 +5,15 @@ using Acusa.Orquestador;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
-builder.Logging.AddSimpleConsole(o =>
+// Logs estructurados: una línea JSON por evento, con el ámbito (IdCorrelacion) y las propiedades de cada mensaje.
+builder.Logging.AddJsonConsole(o =>
 {
-    o.SingleLine = true;
-    o.TimestampFormat = "HH:mm:ss ";
+    o.IncludeScopes = true;
+    o.UseUtcTimestamp = true;
+    o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+    o.JsonWriterOptions = new System.Text.Json.JsonWriterOptions { Indented = false, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 });
+Acusa.Orquestador.Errores.SinRuido(builder.Logging);
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -56,16 +60,8 @@ if (almacen.ContarUsuarios() == 0 && !string.IsNullOrWhiteSpace(config.CorreoIni
 
 var app = builder.Build();
 
-// Un 401 siempre lleva cuerpo: un cliente de API (Postman, Bruno) muestra el motivo en lugar de una respuesta vacía.
-app.Use(async (contexto, siguiente) =>
-{
-    await siguiente();
-    var r = contexto.Response;
-    if (!r.HasStarted && r.StatusCode == StatusCodes.Status401Unauthorized && (r.ContentLength ?? 0) == 0 && string.IsNullOrEmpty(r.ContentType))
-    {
-        await r.WriteAsJsonAsync(new { error = "No autorizado: falta la cabecera Authorization (Bearer <llave de API o token>) o la llave no es válida." });
-    }
-});
+// Identificador de correlación, registro de cada petición y formato único de error (también para excepciones y respuestas sin cuerpo).
+Acusa.Orquestador.Errores.Usar(app);
 
 // En la nube Central va detrás del proxy del proveedor (que pone el HTTPS): sin esto, todas las personas parecerían venir de la
 // misma IP y el límite de intentos de acceso las bloquearía juntas. Se activa con Orquestador__ProxyInverso=true.
@@ -95,35 +91,35 @@ var admin = app.MapGroup("/admin").WithTags("Administración");
 
 admin.MapPost("/clientes", (SolicitudCliente cuerpo, HttpContext http, Opciones o, Almacen a) =>
 {
-    if (!EsAdmin(http, o)) return Results.Unauthorized();
-    if (string.IsNullOrWhiteSpace(cuerpo.Nombre)) return Results.BadRequest(new { error = "Falta el nombre." });
+    if (!EsAdmin(http, o)) return Errores.NoAutorizado();
+    if (string.IsNullOrWhiteSpace(cuerpo.Nombre)) return Errores.Json(400, "Falta el nombre.");
     return Results.Created("/admin/clientes", new { clienteId = a.CrearCliente(cuerpo.Nombre.Trim()) });
 });
 
 admin.MapPost("/clientes/{clienteId}/empresas", (string clienteId, SolicitudEmpresa cuerpo, HttpContext http, Opciones o, Almacen a) =>
 {
-    if (!EsAdmin(http, o)) return Results.Unauthorized();
-    if (!a.ClienteExiste(clienteId)) return Results.NotFound(new { error = "No existe el cliente." });
-    if (string.IsNullOrWhiteSpace(cuerpo.Nombre)) return Results.BadRequest(new { error = "Falta el nombre de la empresa." });
+    if (!EsAdmin(http, o)) return Errores.NoAutorizado();
+    if (!a.ClienteExiste(clienteId)) return Errores.Json(404, "No existe el cliente.");
+    if (string.IsNullOrWhiteSpace(cuerpo.Nombre)) return Errores.Json(400, "Falta el nombre de la empresa.");
     return Results.Ok(new { clienteId, empresa = cuerpo.Nombre.Trim(), nueva = a.AgregarEmpresa(clienteId, cuerpo.Nombre.Trim()) });
 });
 
 admin.MapPost("/clientes/{clienteId}/llaves", (string clienteId, SolicitudLlave cuerpo, HttpContext http, Opciones o, Almacen a) =>
 {
-    if (!EsAdmin(http, o)) return Results.Unauthorized();
-    if (!a.ClienteExiste(clienteId)) return Results.NotFound(new { error = "No existe el cliente." });
-    if (cuerpo.Rol is not (Roles.Api or Roles.Worker)) return Results.BadRequest(new { error = "El rol debe ser 'api' o 'worker'." });
+    if (!EsAdmin(http, o)) return Errores.NoAutorizado();
+    if (!a.ClienteExiste(clienteId)) return Errores.Json(404, "No existe el cliente.");
+    if (cuerpo.Rol is not (Roles.Api or Roles.Worker)) return Errores.Json(400, "El rol debe ser 'api' o 'worker'.");
     // La llave se muestra una sola vez: en la base queda únicamente su hash.
     return Results.Ok(new { clienteId, rol = cuerpo.Rol, llave = a.CrearLlave(clienteId, cuerpo.Rol, cuerpo.Nombre) });
 });
 
 admin.MapPost("/clientes/{clienteId}/usuarios", (string clienteId, SolicitudUsuario cuerpo, HttpContext http, Opciones o, Almacen a) =>
 {
-    if (!EsAdmin(http, o)) return Results.Unauthorized();
-    if (!a.ClienteExiste(clienteId)) return Results.NotFound(new { error = "No existe el cliente." });
-    if (string.IsNullOrWhiteSpace(cuerpo.Correo) || !cuerpo.Correo.Contains('@')) return Results.BadRequest(new { error = "Correo inválido." });
-    if ((cuerpo.Contrasena ?? string.Empty).Length < 10) return Results.BadRequest(new { error = "La contraseña debe tener al menos 10 caracteres." });
-    if (a.BuscarUsuarioPorEmail(cuerpo.Correo) is not null) return Results.Conflict(new { error = "Ya existe un usuario con ese correo." });
+    if (!EsAdmin(http, o)) return Errores.NoAutorizado();
+    if (!a.ClienteExiste(clienteId)) return Errores.Json(404, "No existe el cliente.");
+    if (string.IsNullOrWhiteSpace(cuerpo.Correo) || !cuerpo.Correo.Contains('@')) return Errores.Json(400, "Correo inválido.");
+    if ((cuerpo.Contrasena ?? string.Empty).Length < 10) return Errores.Json(400, "La contraseña debe tener al menos 10 caracteres.");
+    if (a.BuscarUsuarioPorEmail(cuerpo.Correo) is not null) return Errores.Json(409, "Ya existe un usuario con ese correo.");
     var id = a.CrearUsuario(clienteId, cuerpo.Correo, string.IsNullOrWhiteSpace(cuerpo.Nombre) ? cuerpo.Correo : cuerpo.Nombre, Contrasenas.Crear(cuerpo.Contrasena!));
     return Results.Created("/admin/usuarios", new { usuarioId = id });
 });
@@ -140,7 +136,7 @@ app.MapPost("/api/auth/token", (HttpContext http, Almacen a, Seguridad seguridad
     var llave = http.Request.Headers["x-api-key"].ToString();
     var identidad = string.IsNullOrEmpty(llave) ? null : a.BuscarLlave(llave);
     return identidad is null
-        ? Results.Json(new { error = "Llave inválida." }, statusCode: StatusCodes.Status401Unauthorized)
+        ? Errores.Json(401, "Llave inválida.")
         : Results.Ok(new TokenRespuesta(seguridad.CrearToken(identidad, DateTimeOffset.UtcNow), seguridad.DuracionTokenSegundos));
 }).WithTags("Auth");
 
@@ -151,7 +147,7 @@ app.MapPost("/api/auth/login", (SolicitudLogin cuerpo, HttpContext http, Almacen
     var origen = http.Connection.RemoteIpAddress?.ToString() ?? "?";
     if (!intentos.Permitido(correo) || !intentos.Permitido("ip:" + origen))
     {
-        return Results.Json(new { error = "Demasiados intentos. Espere unos minutos." }, statusCode: StatusCodes.Status429TooManyRequests);
+        return Errores.Json(429, "Demasiados intentos. Espere unos minutos.");
     }
 
     var usuario = a.BuscarUsuarioPorEmail(correo);
@@ -160,7 +156,7 @@ app.MapPost("/api/auth/login", (SolicitudLogin cuerpo, HttpContext http, Almacen
     {
         intentos.Fallo(correo);
         intentos.Fallo("ip:" + origen);
-        return Results.Json(new { error = "Correo o contraseña incorrectos." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Errores.Json(401, "Correo o contraseña incorrectos.");
     }
 
     intentos.Acierto(correo);
@@ -174,41 +170,34 @@ var api = app.MapGroup("/api/sdk").WithTags("SDK");
 
 api.MapPost("/execute", async Task<IResult> (SolicitudEjecutar cuerpo, HttpContext http, Almacen a, Seguridad seguridad, Opciones o, Notificador notificador, int? esperar) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
 
     // v1 expone solo 8 operaciones. El worker conserva el soporte de otras (actualizar, direcciones, lotes, leer documento),
     // pero aquí no se aceptan: ampliar la API es agregarlas a Operaciones.Soportadas y al catálogo.
     var tipo = (cuerpo.TipoProceso ?? string.Empty).Trim().ToLowerInvariant();
     if (!Operaciones.Soportadas.Contains(tipo))
     {
-        return Results.BadRequest(new
-        {
-            error = $"tipoProceso '{cuerpo.TipoProceso}' no está disponible en esta versión.",
-            operacionesDisponibles = Operaciones.Soportadas,
-        });
+        return Errores.Json(400, $"tipoProceso '{cuerpo.TipoProceso}' no está disponible en esta versión.", [$"Operaciones disponibles: {string.Join(", ", Operaciones.Soportadas)}"]);
     }
 
     // La empresa también se acepta con el nombre dbName.
     var empresa = (string.IsNullOrWhiteSpace(cuerpo.Empresa) ? cuerpo.DbName : cuerpo.Empresa)?.Trim() ?? string.Empty;
     if (!a.EmpresaDelCliente(quien.ClienteId, empresa))
     {
-        return Results.BadRequest(new { error = $"La empresa '{empresa}' no está registrada para este cliente." });
+        return Errores.Json(400, $"La empresa '{empresa}' no está registrada para este cliente.");
     }
 
     // La cola guarda cada payload. Una contraseña (la del certificado, por ejemplo) no debe quedar ahí: vive en el worker.
     if (cuerpo.Payload is { ValueKind: JsonValueKind.Object } objeto && CamposSecretos.Buscar(objeto) is { } campo)
     {
-        return Results.BadRequest(new
-        {
-            error = $"El campo '{campo}' parece una contraseña y no se acepta en la orden: la cola guarda cada payload. " +
-                    "La contraseña del certificado se configura en el panel del worker.",
-        });
+        return Errores.Json(400, $"El campo '{campo}' parece una contraseña y no se acepta en la orden: la cola guarda cada payload. " +
+                                 "La contraseña del certificado se configura en el panel del worker.");
     }
 
     var payload = cuerpo.Payload is { ValueKind: JsonValueKind.Object } p ? p.GetRawText() : "{}";
     if (payload.Length > o.MaxPayloadBytes)
     {
-        return Results.BadRequest(new { error = $"El payload excede {o.MaxPayloadBytes} caracteres." });
+        return Errores.Json(400, $"El payload excede {o.MaxPayloadBytes} caracteres.");
     }
 
     // Llave de idempotencia: encabezado Idempotency-Key o campo llaveIdempotencia. Un reintento con la misma llave y la
@@ -218,17 +207,13 @@ api.MapPost("/execute", async Task<IResult> (SolicitudEjecutar cuerpo, HttpConte
     {
         if (llave.Length > 100 || !llave.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':'))
         {
-            return Results.BadRequest(new { error = "La llave de idempotencia admite hasta 100 caracteres: letras, números, guion, guion bajo, punto y dos puntos." });
+            return Errores.Json(400, "La llave de idempotencia admite hasta 100 caracteres: letras, números, guion, guion bajo, punto y dos puntos.");
         }
 
         var r = a.EncolarIdempotente(quien.ClienteId, empresa, tipo, payload, llave);
         if (r.Conflicto)
         {
-            return Results.Conflict(new
-            {
-                error = "Esa llave de idempotencia ya se usó con una orden distinta. Use una llave nueva para una orden nueva.",
-                tareaId = r.Id,
-            });
+            return Errores.Json(409, "Esa llave de idempotencia ya se usó con una orden distinta. Use una llave nueva para una orden nueva.", tareaId: r.Id);
         }
 
         if (r.Repetida)
@@ -260,13 +245,13 @@ api.MapPost("/execute", async Task<IResult> (SolicitudEjecutar cuerpo, HttpConte
         var tarea = await notificador.EsperarResultadoAsync(a, quien.ClienteId, tareaId, TimeSpan.FromSeconds(segundos), http.RequestAborted);
         if (tarea is null)
         {
-            return Results.NotFound(new { error = "No existe la tarea." });
+            return Errores.Json(404, "No existe la tarea.");
         }
 
         return tarea.Estado switch
         {
             EstadoTarea.Completada => Results.Ok(Resultado(tarea)),
-            EstadoTarea.Fallida => Results.UnprocessableEntity(Resultado(tarea)),
+            EstadoTarea.Fallida => Errores.DeTareaJson(tarea.Error, tarea.CodigoSdk, tarea.Id),
             _ => Results.Accepted($"/api/sdk/tasks/{tareaId}", new TareaCreada(tareaId, tarea.Estado)),
         };
     }
@@ -274,7 +259,7 @@ api.MapPost("/execute", async Task<IResult> (SolicitudEjecutar cuerpo, HttpConte
 
 api.MapGet("/status", (HttpContext http, Almacen a, Seguridad seguridad, Opciones o) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     var workers = a.ListarWorkers(quien.ClienteId, TimeSpan.FromSeconds(o.WorkerEnLineaSegundos));
     return Results.Ok(new
     {
@@ -291,26 +276,26 @@ api.MapGet("/status", (HttpContext http, Almacen a, Seguridad seguridad, Opcione
 // orden cuya respuesta se perdió (corte de red, tiempo agotado) sin volver a mandarla.
 api.MapGet("/tasks/{id}", async Task<IResult> (string id, HttpContext http, Almacen a, Seguridad seguridad, Opciones o, Notificador notificador, int? esperar) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     if (esperar is > 0)
     {
         var segundos = Math.Clamp(esperar.Value, 0, o.EsperaMaximaSegundos);
         var espera = await notificador.EsperarResultadoAsync(a, quien.ClienteId, id, TimeSpan.FromSeconds(segundos), http.RequestAborted);
-        return espera is null ? Results.NotFound(new { error = "No existe la tarea." }) : Results.Ok(espera);
+        return espera is null ? Errores.Json(404, "No existe la tarea.") : Results.Ok(espera);
     }
 
-    return a.ObtenerTarea(quien.ClienteId, id) is { } tarea ? Results.Ok(tarea) : Results.NotFound(new { error = "No existe la tarea." });
+    return a.ObtenerTarea(quien.ClienteId, id) is { } tarea ? Results.Ok(tarea) : Errores.Json(404, "No existe la tarea.");
 });
 
 api.MapGet("/tasks", (HttpContext http, Almacen a, Seguridad seguridad, EstadoTarea? estado, int? limite) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     return Results.Ok(a.ListarTareas(quien.ClienteId, estado, limite ?? 50));
 });
 
 api.MapGet("/workers", (HttpContext http, Almacen a, Seguridad seguridad, Opciones o) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Api, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     return Results.Ok(a.ListarWorkers(quien.ClienteId, TimeSpan.FromSeconds(o.WorkerEnLineaSegundos)));
 });
 
@@ -320,59 +305,59 @@ var portal = app.MapGroup("/api/portal").WithTags("Portal");
 
 portal.MapGet("/yo", (HttpContext http, Almacen a, Seguridad seguridad) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien || a.BuscarUsuarioPorId(quien.LlaveId) is not { } u) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien || a.BuscarUsuarioPorId(quien.LlaveId) is not { } u) return Errores.NoAutorizado();
     return Results.Ok(new { u.Nombre, u.Email, cliente = u.ClienteNombre, empresas = a.EmpresasDelCliente(quien.ClienteId) });
 });
 
 portal.MapGet("/resumen", (HttpContext http, Almacen a, Seguridad seguridad, Opciones o) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     return Results.Ok(a.Resumen(quien.ClienteId, TimeSpan.FromSeconds(o.WorkerEnLineaSegundos)));
 });
 
 // Catálogo de las operaciones expuestas, con su ejemplo; lo usa la pantalla Desarrolladores.
 portal.MapGet("/operaciones", (HttpContext http, Almacen a, Seguridad seguridad) =>
-    Autenticar(http, a, seguridad, Roles.Portal) is null ? Results.Unauthorized() : Results.Ok(CatalogoOperaciones.Todas));
+    Autenticar(http, a, seguridad, Roles.Portal) is null ? Errores.NoAutorizado() : Results.Ok(CatalogoOperaciones.Todas));
 
 portal.MapGet("/empresas", (HttpContext http, Almacen a, Seguridad seguridad) =>
-    Autenticar(http, a, seguridad, Roles.Portal) is { } quien ? Results.Ok(a.EmpresasDelCliente(quien.ClienteId)) : Results.Unauthorized());
+    Autenticar(http, a, seguridad, Roles.Portal) is { } quien ? Results.Ok(a.EmpresasDelCliente(quien.ClienteId)) : Errores.NoAutorizado());
 
 portal.MapPost("/empresas", (SolicitudEmpresa cuerpo, HttpContext http, Almacen a, Seguridad seguridad) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     var nombre = (cuerpo.Nombre ?? string.Empty).Trim();
     if (nombre.Length is < 3 or > 80 || nombre.Any(c => !(char.IsLetterOrDigit(c) || c is '_' or '-' or ' ')))
     {
-        return Results.BadRequest(new { error = "El nombre de la empresa debe tener entre 3 y 80 caracteres: letras, números, guion y guion bajo." });
+        return Errores.Json(400, "El nombre de la empresa debe tener entre 3 y 80 caracteres: letras, números, guion y guion bajo.");
     }
 
-    return a.AgregarEmpresa(quien.ClienteId, nombre) ? Results.Created("/api/portal/empresas", new { nombre }) : Results.Conflict(new { error = "Esa empresa ya está registrada." });
+    return a.AgregarEmpresa(quien.ClienteId, nombre) ? Results.Created("/api/portal/empresas", new { nombre }) : Errores.Json(409, "Esa empresa ya está registrada.");
 });
 
 portal.MapDelete("/empresas/{nombre}", (string nombre, HttpContext http, Almacen a, Seguridad seguridad) =>
-    Autenticar(http, a, seguridad, Roles.Portal) is not { } quien ? Results.Unauthorized()
-    : a.QuitarEmpresa(quien.ClienteId, nombre) ? Results.NoContent() : Results.NotFound(new { error = "No existe esa empresa." }));
+    Autenticar(http, a, seguridad, Roles.Portal) is not { } quien ? Errores.NoAutorizado()
+    : a.QuitarEmpresa(quien.ClienteId, nombre) ? Results.NoContent() : Errores.Json(404, "No existe esa empresa."));
 
 portal.MapGet("/llaves", (HttpContext http, Almacen a, Seguridad seguridad) =>
-    Autenticar(http, a, seguridad, Roles.Portal) is { } quien ? Results.Ok(a.ListarLlaves(quien.ClienteId)) : Results.Unauthorized());
+    Autenticar(http, a, seguridad, Roles.Portal) is { } quien ? Results.Ok(a.ListarLlaves(quien.ClienteId)) : Errores.NoAutorizado());
 
 portal.MapPost("/llaves", (SolicitudLlave cuerpo, HttpContext http, Almacen a, Seguridad seguridad) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Results.Unauthorized();
-    if (cuerpo.Rol is not (Roles.Api or Roles.Worker)) return Results.BadRequest(new { error = "El tipo debe ser 'api' o 'worker'." });
+    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
+    if (cuerpo.Rol is not (Roles.Api or Roles.Worker)) return Errores.Json(400, "El tipo debe ser 'api' o 'worker'.");
     // La llave completa se muestra solo en esta respuesta; después queda únicamente su prefijo.
     return Results.Ok(new { rol = cuerpo.Rol, llave = a.CrearLlave(quien.ClienteId, cuerpo.Rol, cuerpo.Nombre) });
 });
 
 portal.MapDelete("/llaves/{id}", (string id, HttpContext http, Almacen a, Seguridad seguridad) =>
-    Autenticar(http, a, seguridad, Roles.Portal) is not { } quien ? Results.Unauthorized()
-    : a.RevocarLlave(quien.ClienteId, id) ? Results.NoContent() : Results.NotFound(new { error = "No existe la llave o ya estaba revocada." }));
+    Autenticar(http, a, seguridad, Roles.Portal) is not { } quien ? Errores.NoAutorizado()
+    : a.RevocarLlave(quien.ClienteId, id) ? Results.NoContent() : Errores.Json(404, "No existe la llave o ya estaba revocada."));
 
 portal.MapPost("/clave", (SolicitudCambioClave cuerpo, HttpContext http, Almacen a, Seguridad seguridad) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien || a.BuscarUsuarioPorId(quien.LlaveId) is not { } u) return Results.Unauthorized();
-    if (!Contrasenas.Verificar(cuerpo.Actual ?? string.Empty, u.Clave)) return Results.BadRequest(new { error = "La contraseña actual no es correcta." });
-    if ((cuerpo.Nueva ?? string.Empty).Length < 10) return Results.BadRequest(new { error = "La contraseña nueva debe tener al menos 10 caracteres." });
+    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien || a.BuscarUsuarioPorId(quien.LlaveId) is not { } u) return Errores.NoAutorizado();
+    if (!Contrasenas.Verificar(cuerpo.Actual ?? string.Empty, u.Clave)) return Errores.Json(400, "La contraseña actual no es correcta.");
+    if ((cuerpo.Nueva ?? string.Empty).Length < 10) return Errores.Json(400, "La contraseña nueva debe tener al menos 10 caracteres.");
     a.CambiarClave(u.Id, Contrasenas.Crear(cuerpo.Nueva!));
     return Results.NoContent();
 });
@@ -384,15 +369,15 @@ var worker = app.MapGroup("/api/worker").WithTags("Worker");
 // El worker consulta; el orquestador nunca le abre una conexión. Cada consulta cuenta como latido.
 worker.MapPost("/poll", async Task<IResult> (SolicitudPoll cuerpo, HttpContext http, Almacen a, Seguridad seguridad, Opciones o, Notificador notificador, int? esperar) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Worker) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Worker) is not { } quien) return Errores.NoAutorizado();
     if (string.IsNullOrWhiteSpace(cuerpo.WorkerId) || string.IsNullOrWhiteSpace(cuerpo.Empresa))
     {
-        return Results.BadRequest(new { error = "Faltan workerId y empresa." });
+        return Errores.Json(400, "Faltan workerId y empresa.");
     }
 
     if (!a.EmpresaDelCliente(quien.ClienteId, cuerpo.Empresa))
     {
-        return Results.BadRequest(new { error = $"La empresa '{cuerpo.Empresa}' no está registrada para este cliente." });
+        return Errores.Json(400, $"La empresa '{cuerpo.Empresa}' no está registrada para este cliente.");
     }
 
     // Con ?esperar=N el worker deja la consulta abierta hasta N segundos: si entra una orden, la recibe al instante en lugar
@@ -431,10 +416,10 @@ worker.MapPost("/poll", async Task<IResult> (SolicitudPoll cuerpo, HttpContext h
 
 worker.MapPost("/tasks/{id}/result", (string id, string workerId, ResultadoTarea cuerpo, HttpContext http, Almacen a, Seguridad seguridad, Notificador notificador) =>
 {
-    if (Autenticar(http, a, seguridad, Roles.Worker) is not { } quien) return Results.Unauthorized();
+    if (Autenticar(http, a, seguridad, Roles.Worker) is not { } quien) return Errores.NoAutorizado();
     if (!a.RegistrarResultado(quien.ClienteId, id, workerId, cuerpo))
     {
-        return Results.Conflict(new { error = "La tarea no está en proceso con este worker." });
+        return Errores.Json(409, "La tarea no está en proceso con este worker.");
     }
 
     notificador.TareaTerminada(id);

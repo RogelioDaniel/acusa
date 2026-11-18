@@ -23,7 +23,7 @@ public static class FacturacionRutas
             var origen = http.Connection.RemoteIpAddress?.ToString() ?? "?";
             if (!intentos.Permitido(correo) || !intentos.Permitido("ip:" + origen))
             {
-                return Results.Json(new { errors = new[] { "Too many attempts. Wait a few minutes." } }, statusCode: 429);
+                return Errores.Json(429, "Too many attempts. Wait a few minutes.");
             }
 
             var usuario = a.BuscarUsuarioPorEmail(correo);
@@ -32,7 +32,7 @@ public static class FacturacionRutas
             {
                 intentos.Fallo(correo);
                 intentos.Fallo("ip:" + origen);
-                return Results.Json(new { errors = new[] { "Invalid email or password" } }, statusCode: 422);
+                return Errores.Json(422, "Invalid email or password", codigo: CodigosError.NoAutorizado);
             }
 
             intentos.Acierto(correo);
@@ -45,10 +45,7 @@ public static class FacturacionRutas
         Ruta(raiz, "POST", "/issuing_companies", (q, s, ct, l, b) => Task.FromResult(s.CrearEmisora(q, b)));
         Ruta(raiz, "GET", "/issuing_companies/{id:int}", (q, s, ct, l, _, r) => Task.FromResult(s.ObtenerEmisora(q, Id(r, "id"))));
         Ruta(raiz, "PUT", "/issuing_companies/{id:int}", (q, s, ct, l, b, r) => Task.FromResult(s.ActualizarEmisora(q, Id(r, "id"), b)));
-        Ruta(raiz, "POST", "/issuing_companies/{id:int}/upload_seals", (q, s, ct, l, b, r) => Task.FromResult(new Resp(501, new
-        {
-            errors = new[] { "Uploading the digital seal (CSD) through the API is not available: the certificate is configured in CONTPAQi and its password lives in the worker." },
-        })));
+        Ruta(raiz, "POST", "/issuing_companies/{id:int}/upload_seals", (q, s, ct, l, b, r) => Task.FromResult(new Resp(501, Errores.Cuerpo(501, "Uploading the digital seal (CSD) through the API is not available: the certificate is configured in CONTPAQi and its password lives in the worker.", codigo: CodigosError.NoImplementado))));
 
         // ---- Compañías ----------------------------------------------------------------------------------------------
         Ruta(raiz, "GET", "/companies", (q, s, ct, l, _) => Task.FromResult(s.ListarCompanias(q, l)));
@@ -89,10 +86,7 @@ public static class FacturacionRutas
         Ruta(raiz, "GET", F + "/{id:int}/xml", (q, s, ct, l, _, r) => s.ArchivoAsync(q, Id(r, "eid"), Id(r, "id"), "xml", ct));
         foreach (var previa in new[] { "preinvoice", "proforma" })
         {
-            Ruta(raiz, "GET", F + "/{id:int}/" + previa, (q, s, ct, l, _, r) => Task.FromResult(new Resp(501, new
-            {
-                errors = new[] { "The preliminary document is not available in this version: it requires printing a draft from CONTPAQi." },
-            })));
+            Ruta(raiz, "GET", F + "/{id:int}/" + previa, (q, s, ct, l, _, r) => Task.FromResult(new Resp(501, Errores.Cuerpo(501, "The preliminary document is not available in this version: it requires printing a draft from CONTPAQi.", codigo: CodigosError.NoImplementado))));
         }
 
         Ruta(raiz, "POST", "/invoices/batches_stamp", (q, s, ct, l, b) => s.TimbrarLoteAsync(q, b, ct));
@@ -119,14 +113,14 @@ public static class FacturacionRutas
         {
             if (Autenticar(http, almacen, seguridad) is not { } quien)
             {
-                return Results.Json(new { errors = new[] { "No authorization headers provided" } }, statusCode: 401);
+                return Errores.Json(401, "No authorization headers provided");
             }
 
             PeticionActual.Texto = $"{metodo} {http.Request.Path}";
             var (cuerpo, invalido) = await LeerCuerpoAsync(http, metodo);
             if (invalido)
             {
-                return Results.Json(new { errors = new[] { "The request body is not valid JSON (UTF-8)" } }, statusCode: 400);
+                return Errores.Json(400, "The request body is not valid JSON (UTF-8)");
             }
 
             var lista = new ParametrosLista(limit, offset, order_by_field, order_by_direction);

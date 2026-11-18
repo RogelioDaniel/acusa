@@ -47,8 +47,9 @@ La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.
 
 Autenticación: `Authorization: Bearer <llave de API>` (empieza con `ak_`) o un token de `POST /api/auth/token`. Cada petición espera al
 worker hasta 60 segundos: si responde, la misma respuesta trae el resultado; si no, responde `202` con la tarea
-(`GET /api/sdk/tasks/{id}`). Con la cabecera `Idempotency-Key`, repetir una escritura no la duplica. Los errores de validación
-responden `422` con `{ "errors": [ … ] }`.
+(`GET /api/sdk/tasks/{id}`). Con la cabecera `Idempotency-Key`, repetir una escritura no la duplica. Todo error responde con el mismo cuerpo,
+`{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }` (`422` para validaciones y para los rechazos de Comercial); el
+identificador también viaja en la cabecera `X-Correlation-Id` y aparece en los logs.
 
 Los impuestos de cada movimiento son `ivaPorcentaje`, `retencionIvaPorcentaje` e `iepsPorcentaje`. `usoCfdi` y `regimenFiscal` son
 obligatorios al crear un documento.
@@ -62,7 +63,7 @@ empresas y los usuarios iniciales se siembran con variables de entorno (`Orquest
 **Acusa Worker** se instala en el servidor de Comercial con `AcusaWorker-Setup.exe`, que registra el servicio de Windows `AcusaWorker`
 (arranque automático, reinicio si falla). El asistente pide la dirección de Central, la cuenta del portal, el usuario del SDK, la llave
 del worker y las empresas. La configuración y los secretos cifrados quedan en `C:\ProgramData\Acusa` y el registro en
-`C:\ProgramData\Acusa\Worker\logs\worker-AAAAMMDD.log`. El instalador se arma con `deploy/instalador/construir-instalador.ps1`.
+`C:\ProgramData\Acusa\Worker\logs\worker-AAAAMMDD.log` (una línea JSON por evento). El instalador se arma con `deploy/instalador/construir-instalador.ps1`.
 
 ## Seguridad
 

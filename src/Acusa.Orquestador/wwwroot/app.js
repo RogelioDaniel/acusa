@@ -61,6 +61,13 @@ function aviso(texto) {
   setTimeout(() => t.remove(), 3200);
 }
 
+// Error de la API: { codigo, mensaje, detalles[], idCorrelacion }. Se muestra el mensaje y, si hay, cada detalle.
+function textoDeError(c) {
+  if (!c) return "";
+  const detalles = Array.isArray(c.detalles) && c.detalles.length ? " " + c.detalles.join(" · ") : "";
+  return (c.mensaje || c.title || "") + detalles;
+}
+
 async function copiar(texto) {
   try { await navigator.clipboard.writeText(texto); aviso("Copiado"); }
   catch { aviso("No se pudo copiar; selecciónelo y use Ctrl+C"); }
@@ -84,7 +91,7 @@ async function api(ruta, opciones = {}) {
   if (r.status === 204) return null;
   let cuerpo = null;
   try { cuerpo = await r.json(); } catch { /* sin cuerpo */ }
-  if (!r.ok) throw new Error((cuerpo && (cuerpo.error || cuerpo.title)) || `Error ${r.status}`);
+  if (!r.ok) throw new Error(textoDeError(cuerpo) || `Error ${r.status}`);
   return cuerpo;
 }
 

@@ -78,30 +78,30 @@ public static class ApiRest
             PeticionActual.Texto = $"{metodo} {http.Request.Path}";
 
             var empresa = Convert.ToString(http.Request.RouteValues["empresa"], CultureInfo.InvariantCulture) ?? string.Empty;
-            if (!a.EmpresaDelCliente(quien.ClienteId, empresa)) return Results.Json(new { error = $"La empresa '{empresa}' no está registrada para este cliente." }, statusCode: 404);
+            if (!a.EmpresaDelCliente(quien.ClienteId, empresa)) return Errores.Json(404, $"La empresa '{empresa}' no está registrada para este cliente.");
 
             JsonObject? cuerpo = null;
             if (conCuerpo)
             {
                 try { cuerpo = await http.Request.ReadFromJsonAsync<JsonObject>(http.RequestAborted); }
-                catch (Exception ex) when (ex is JsonException or InvalidOperationException or BadHttpRequestException) { return Results.Json(new { error = "El cuerpo no es un objeto JSON válido." }, statusCode: 400); }
-                if (cuerpo is null) return Results.Json(new { error = "El cuerpo es obligatorio." }, statusCode: 400);
+                catch (Exception ex) when (ex is JsonException or InvalidOperationException or BadHttpRequestException) { return Errores.Json(400, "El cuerpo no es un objeto JSON válido."); }
+                if (cuerpo is null) return Errores.Json(400, "El cuerpo es obligatorio.");
                 if (JsonSerializer.SerializeToElement(cuerpo) is { ValueKind: JsonValueKind.Object } objeto && CamposSecretos.Buscar(objeto) is { } campo)
                 {
-                    return Results.Json(new { error = $"El campo '{campo}' parece una contraseña y no se acepta: la contraseña del certificado se configura en el worker." }, statusCode: 400);
+                    return Errores.Json(400, $"El campo '{campo}' parece una contraseña y no se acepta: la contraseña del certificado se configura en el worker.");
                 }
             }
 
             var llave = http.Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
             if (!string.IsNullOrEmpty(llave) && (llave.Length > 100 || !llave.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' or '.' or ':')))
             {
-                return Results.Json(new { error = "Idempotency-Key admite hasta 100 caracteres: letras, números, guion, guion bajo, punto y dos puntos." }, statusCode: 400);
+                return Errores.Json(400, "Idempotency-Key admite hasta 100 caracteres: letras, números, guion, guion bajo, punto y dos puntos.");
             }
 
             return await f(new Contexto(http, quien, ejecutor, o, empresa, cuerpo, string.IsNullOrEmpty(llave) ? null : llave, http.RequestAborted));
         });
 
-    private static IResult NoAutorizado() => Results.Json(new { error = "Falta la cabecera Authorization: Bearer <llave de API o token>, o no es válida." }, statusCode: 401);
+    private static IResult NoAutorizado() => Errores.NoAutorizado();
 
     // ------------------------------------------------------------------------------------------------------------------
     // Una orden simple
@@ -109,7 +109,7 @@ public static class ApiRest
 
     private static async Task<IResult> Orden(Contexto c, string tipo, object payload, int estadoOk = 200, IReadOnlyList<string>? errores = null)
     {
-        if (errores is { Count: > 0 }) return Results.Json(new { errors = errores }, statusCode: 422);
+        if (errores is { Count: > 0 }) return Errores.Validacion(errores);
         var r = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, tipo, payload, c.Llave, c.Ct);
         return Responder(c, r, estadoOk);
     }
@@ -123,7 +123,7 @@ public static class ApiRest
             return Results.Json(new { tareaId = r.TareaId, estado = "EnProceso", mensaje = "El worker no respondió a tiempo; consulte la tarea." }, statusCode: 202);
         }
 
-        return Results.Json(new { error = r.Error, codigoSdk = r.CodigoSdk, tareaId = r.TareaId }, statusCode: 422);
+        return Errores.DeTareaJson(r.Error, r.CodigoSdk, r.TareaId);
     }
 
     // ------------------------------------------------------------------------------------------------------------------
@@ -162,7 +162,7 @@ public static class ApiRest
         var d = c.Cuerpo!;
         var errores = Requeridos(d, ("codigo", "Codigo"), ("razonSocial", "Razon social"), ("rfc", "Rfc"), ("codigoPostal", "Codigo postal"));
         if (Txt(d["codigoPostal"])?.Trim() is { Length: > 0 } cp && !CodigoPostalValido(cp)) errores.Add("Codigo postal debe tener 5 digitos");
-        if (errores.Count > 0) return Results.Json(new { errors = errores }, statusCode: 422);
+        if (errores.Count > 0) return Errores.Validacion(errores);
 
         var codigo = Txt(d["codigo"])!.Trim();
         var cliente = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.ClienteCrear,
@@ -174,7 +174,7 @@ public static class ApiRest
         {
             return direccion.EnCurso
                 ? Responder(c, direccion, 201)
-                : Results.Json(new { error = $"El cliente se creó, pero no se pudo guardar su domicilio fiscal: {direccion.Error}", clienteCreado = true, codigo, codigoSdk = direccion.CodigoSdk, tareaId = direccion.TareaId }, statusCode: 422);
+                : Results.Json(Errores.DeTarea(direccion.Error, direccion.CodigoSdk, direccion.TareaId) with { Mensaje = $"El cliente {codigo} se creó, pero no se pudo guardar su domicilio fiscal. Guárdelo con PATCH …/clientes/{codigo} y el código postal." }, statusCode: 422);
         }
 
         return ClienteConDireccion(cliente, direccion, 201);
@@ -193,7 +193,7 @@ public static class ApiRest
         if (cambios.Count == 1 && !traeDomicilio) errores.Add("No hay datos que actualizar");
         if (traeDomicilio && string.IsNullOrWhiteSpace(Txt(d["codigoPostal"]))) errores.Add("Codigo postal no puede estar vacio al guardar el domicilio");
         if (Txt(d["codigoPostal"])?.Trim() is { Length: > 0 } cp && !CodigoPostalValido(cp)) errores.Add("Codigo postal debe tener 5 digitos");
-        if (errores.Count > 0) return Results.Json(new { errors = errores }, statusCode: 422);
+        if (errores.Count > 0) return Errores.Validacion(errores);
 
         ResultadoOrden? cliente = null;
         if (cambios.Count > 1)
@@ -240,7 +240,7 @@ public static class ApiRest
             }
         }
 
-        if (errores.Count > 0) return Results.Json(new { errors = errores }, statusCode: 422);
+        if (errores.Count > 0) return Errores.Validacion(errores);
 
         // El régimen fiscal y el uso de CFDI viven en el cliente de Comercial: se actualizan antes de crear el documento.
         var cliente = Txt(d["clienteCodigo"])!.Trim();
@@ -282,7 +282,7 @@ public static class ApiRest
         error = null;
         if (!int.TryParse(c.Ruta("folio"), NumberStyles.None, CultureInfo.InvariantCulture, out folio) || folio <= 0)
         {
-            error = Results.Json(new { error = "El folio debe ser un número entero positivo." }, statusCode: 400);
+            error = Errores.Json(400, "El folio debe ser un número entero positivo.");
             return false;
         }
 
@@ -356,7 +356,7 @@ public static class ApiRest
         var r = await Archivo(c, concepto, serie, folio, formato);
         if (!r.Ok) return Responder(c, r);
         var b64 = ContenidoBase64(r, formato);
-        if (b64 is null) return Results.Json(new { error = $"Comercial no entregó el archivo {formato.ToUpperInvariant()} (el documento debe estar timbrado)." }, statusCode: 422);
+        if (b64 is null) return Errores.Json(422, $"Comercial no entregó el archivo {formato.ToUpperInvariant()} (el documento debe estar timbrado).", codigo: CodigosError.OperacionFallida);
         var nombre = $"{serie}{folio}.{formato}";
         return formato == "xml"
             ? Results.Content(FacturacionServicio.DecodificarXml(b64) ?? string.Empty, "application/xml; charset=utf-8")
