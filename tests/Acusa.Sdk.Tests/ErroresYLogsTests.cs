@@ -75,13 +75,13 @@ public sealed class ErroresSdkTests
 public sealed class RedaccionTests
 {
     [Theory]
-    [InlineData("llave ak_0123456789abcdef0123456789abcdef lista", "ak_0123")]
-    [InlineData("llave wk_0123456789abcdef0123456789abcdef lista", "wk_0123")]
+    [InlineData("llave ak_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa lista", "ak_aaaa")]
+    [InlineData("llave wk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb lista", "wk_bbbb")]
     [InlineData("Authorization: Bearer abc.def-ghi_123", "abc.def")]
-    [InlineData("token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.firma123", "eyJhbGci")]
-    [InlineData("password=SuperSecreta1", "SuperSecreta1")]
-    [InlineData("{\"contrasena\":\"SuperSecreta1\"}", "SuperSecreta1")]
-    [InlineData("claveCertificado: 12345678a", "12345678a")]
+    [InlineData("token eyJaaaaaaaa.eyJbbbbbbbb.cccccccc", "eyJaaaa")]
+    [InlineData("password=claveFalsa", "claveFalsa")]
+    [InlineData("{\"contrasena\":\"claveFalsa\"}", "claveFalsa")]
+    [InlineData("claveCertificado: claveFalsa", "claveFalsa")]
     [InlineData("csdPassword=\"con espacios y mas\"", "con espacios")]
     public void Oculta_llaves_tokens_contrasenas_y_datos_del_certificado(string texto, string secreto)
     {
@@ -229,12 +229,12 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task Una_contrasena_en_el_cuerpo_se_rechaza_sin_repetirla_en_la_respuesta()
     {
-        var r = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos", new { codigo = "P1", password = "SuperSecreta1" }));
+        var r = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos", new { codigo = "P1", password = "claveFalsa" }));
         var (e, crudo) = await Leer(r);
 
         Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
         Assert.Equal(CodigosError.SolicitudInvalida, e.Codigo);
-        Assert.DoesNotContain("SuperSecreta1", crudo);
+        Assert.DoesNotContain("claveFalsa", crudo);
     }
 
     [Fact]
@@ -314,7 +314,7 @@ public sealed class RegistroDeLogsTests
         Errores.Usar(app);
         app.MapGet("/api/ok", () => Results.Ok(new { ok = true }));
         app.MapGet("/api/falla", () => Results.StatusCode(404));
-        app.MapGet("/api/revienta", object () => throw new InvalidOperationException("Falló con password=SuperSecreta1 y la llave ak_0123456789abcdef0123456789abcdef"));
+        app.MapGet("/api/revienta", object () => throw new InvalidOperationException("Falló con password=claveFalsa y la llave ak_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         await app.StartAsync();
         return (app, logs, app.GetTestClient());
     }
@@ -337,13 +337,13 @@ public sealed class RegistroDeLogsTests
     {
         var (app, logs, http) = await Arrancar();
         await using var _ = app;
-        var p = new HttpRequestMessage(HttpMethod.Get, "/api/ok?token=SuperSecreta1");
-        p.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "ak_0123456789abcdef0123456789abcdef");
+        var p = new HttpRequestMessage(HttpMethod.Get, "/api/ok?token=claveFalsa");
+        p.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "ak_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         await http.SendAsync(p);
 
         var todo = string.Join("\n", logs.Lineas);
-        Assert.DoesNotContain("SuperSecreta1", todo);
-        Assert.DoesNotContain("ak_0123456789", todo);
+        Assert.DoesNotContain("claveFalsa", todo);
+        Assert.DoesNotContain("ak_aaaaaaaaaa", todo);
         Assert.DoesNotContain("Bearer", todo);
     }
 
@@ -359,12 +359,12 @@ public sealed class RegistroDeLogsTests
         Assert.Equal(HttpStatusCode.InternalServerError, r.StatusCode);
         Assert.Equal(CodigosError.ErrorInterno, e.Codigo);
         Assert.Equal(r.Headers.GetValues(Correlacion.Cabecera).Single(), e.IdCorrelacion);
-        Assert.DoesNotContain("SuperSecreta1", crudo);
+        Assert.DoesNotContain("claveFalsa", crudo);
 
         var todo = string.Join("\n", logs.Lineas);
         Assert.Contains("Error no controlado", todo);
-        Assert.DoesNotContain("SuperSecreta1", todo);
-        Assert.DoesNotContain("ak_0123456789", todo);
+        Assert.DoesNotContain("claveFalsa", todo);
+        Assert.DoesNotContain("ak_aaaaaaaaaa", todo);
     }
 
     [Fact]
