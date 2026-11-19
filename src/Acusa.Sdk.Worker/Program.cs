@@ -149,7 +149,10 @@ if (configurado)
             builder.Services.AddSingleton<IProveedorClave>(new ClaveProtegida(claveSdk));
         }
 
-        builder.Services.AddSingleton(sp => new TrazaSdk(sp.GetRequiredService<ILoggerFactory>().CreateLogger("SDK")));
+        builder.Services.AddSingleton<IFuncionesSdk, FuncionesSdkNativas>();
+        builder.Services.AddSingleton(sp => new TrazaSdk(
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("SDK"),
+            sp.GetRequiredService<IFuncionesSdk>().ObtenerMensajeDeError));
         builder.Services.AddSingleton<SesionContpaqi>();
         builder.Services.AddSingleton<ISesionSdk>(sp => sp.GetRequiredService<SesionContpaqi>());
         builder.Services.AddSingleton<IClienteGateway, ClienteGatewayContpaqi>();

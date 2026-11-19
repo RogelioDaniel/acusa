@@ -1,15 +1,19 @@
-﻿using Acusa.Sdk.Application;
+using Acusa.Sdk.Application;
 using Acusa.Sdk.Application.Sesion;
-using Acusa.Sdk.Integration.Contpaqi.Native;
 
 namespace Acusa.Sdk.Integration.Contpaqi;
 
 /// <summary>
 /// Sesión real con el SDK. <see cref="Iniciar"/> abre el diálogo "Ingreso a CONTPAQi COMERCIAL" en la
 /// sesión de Windows donde corre el proceso y espera a que alguien escriba la clave; la clave nunca
-/// pasa por la API.
+/// pasa por la API. Todas las llamadas salen por un solo hilo y, si una falla, la sesión queda en
+/// <see cref="EstadoSesion.Error"/> con el SDK terminado, sin afectar al resto de la aplicación.
 /// </summary>
-public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IProveedorClave? proveedorClave = null) : ISesionSdk, IDisposable
+public sealed class SesionContpaqi(
+    OpcionesContpaqi opciones,
+    TrazaSdk traza,
+    IFuncionesSdk funcionesSdk,
+    IProveedorClave? proveedorClave = null) : ISesionSdk, IDisposable
 {
     private readonly HiloSdk _hilo = new();
     private readonly object _candado = new();
@@ -42,7 +46,7 @@ public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IP
                 : "Esperando la clave en el diálogo de CONTPAQi del servidor.";
         }
 
-        _ = _hilo.EjecutarAsync(Inicializar);
+        _ = _hilo.EjecutarAsync(InicializarYAbrirEmpresa);
     }
 
     public async Task CerrarAsync()
@@ -69,12 +73,12 @@ public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IP
         {
             try
             {
-                Terminar();
-                Cambiar(EstadoSesion.NoIniciada, "Sesión cerrada.");
+                CerrarEmpresaYTerminarSdk();
+                CambiarEstado(EstadoSesion.NoIniciada, "Sesión cerrada.");
             }
-            catch (Exception ex)
+            catch (Exception excepcion)
             {
-                Cambiar(EstadoSesion.Error, $"Error al cerrar: {ex.Message}");
+                CambiarEstado(EstadoSesion.Error, $"Error al cerrar: {excepcion.Message}");
             }
 
             return 0;
@@ -93,40 +97,11 @@ public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IP
             return null;
         }
 
-        return await _hilo.EjecutarAsync<string?>(() =>
-        {
-            var anterior = opciones.RutaEmpresa;
-            try
-            {
-                traza.Llamar("fCierraEmpresa()", SdkNative.fCierraEmpresa);
-                var a = traza.Llamar($"fAbreEmpresa('{Normalizar(rutaEmpresa)}')", () => SdkNative.fAbreEmpresa(Normalizar(rutaEmpresa)));
-                if (a != 0)
-                {
-                    // Se intenta volver a la empresa anterior para no dejar el SDK sin empresa.
-                    var vuelta = traza.Llamar($"fAbreEmpresa('{Normalizar(anterior)}')", () => SdkNative.fAbreEmpresa(Normalizar(anterior)));
-                    if (vuelta != 0)
-                    {
-                        traza.Llamar("fTerminaSDK()", SdkNative.fTerminaSDK);
-                        Cambiar(EstadoSesion.Error, $"No se pudo abrir {rutaEmpresa} ni volver a {anterior}.");
-                    }
-
-                    return $"fAbreEmpresa = {a}: {SdkNative.Mensaje(a)}";
-                }
-
-                opciones.RutaEmpresa = rutaEmpresa;
-                Cambiar(EstadoSesion.Lista, "Empresa abierta.");
-                return null;
-            }
-            catch (Exception ex)
-            {
-                Cambiar(EstadoSesion.Error, $"{ex.GetType().Name}: {ex.Message}");
-                return ex.Message;
-            }
-        });
+        return await _hilo.EjecutarAsync<string?>(() => CambiarEmpresaEnElHilo(rutaEmpresa));
     }
 
     /// <summary>Ejecuta <paramref name="trabajo"/> en el hilo del SDK. La sesión debe estar lista.</summary>
-    internal Task<T> EjecutarAsync<T>(Func<T> trabajo)
+    internal Task<TResultado> EjecutarAsync<TResultado>(Func<TResultado> trabajo)
     {
         var estado = Estado.Estado;
         if (estado != EstadoSesion.Lista)
@@ -137,59 +112,85 @@ public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IP
         return _hilo.EjecutarAsync(trabajo);
     }
 
-    private int Inicializar()
+    private string? CambiarEmpresaEnElHilo(string rutaEmpresa)
+    {
+        var rutaAnterior = opciones.RutaEmpresa;
+        try
+        {
+            traza.Llamar("fCierraEmpresa()", funcionesSdk.CerrarEmpresa);
+            var codigoApertura = AbrirEmpresa(rutaEmpresa);
+            if (codigoApertura != 0)
+            {
+                // Se intenta volver a la empresa anterior para no dejar el SDK sin empresa.
+                var codigoRegreso = AbrirEmpresa(rutaAnterior);
+                if (codigoRegreso != 0)
+                {
+                    traza.Llamar("fTerminaSDK()", funcionesSdk.TerminarSdk);
+                    CambiarEstado(EstadoSesion.Error, $"No se pudo abrir {rutaEmpresa} ni volver a {rutaAnterior}.");
+                }
+
+                return DescribirFallo("fAbreEmpresa", codigoApertura);
+            }
+
+            opciones.RutaEmpresa = rutaEmpresa;
+            CambiarEstado(EstadoSesion.Lista, "Empresa abierta.");
+            return null;
+        }
+        catch (Exception excepcion)
+        {
+            CambiarEstado(EstadoSesion.Error, $"{excepcion.GetType().Name}: {excepcion.Message}");
+            return excepcion.Message;
+        }
+    }
+
+    private int InicializarYAbrirEmpresa()
     {
         try
         {
-            // MGWServicios.dll depende de otros archivos de la carpeta de Comercial.
-            Environment.CurrentDirectory = opciones.RutaSdk;
-            Environment.SetEnvironmentVariable(
-                "PATH",
-                opciones.RutaSdk + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"));
+            funcionesSdk.PrepararEntorno(opciones.RutaSdk);
 
             if (opciones.UsaCredenciales)
             {
-                var fallo = IniciarConCredenciales();
-                if (fallo is not null)
+                var codigoFallo = IniciarSesionConCredenciales();
+                if (codigoFallo is not null)
                 {
-                    return fallo.Value;
+                    return codigoFallo.Value;
                 }
             }
             else
             {
                 // Se queda esperando hasta que alguien escribe la clave en el diálogo de CONTPAQi.
-                var r = traza.Llamar("fInicializaSDK()", SdkNative.fInicializaSDK, anunciar: true);
-                if (r != 0)
+                var codigoInicio = traza.Llamar("fInicializaSDK()", funcionesSdk.InicializarSdk, anunciar: true);
+                if (codigoInicio != 0)
                 {
-                    Cambiar(EstadoSesion.Error, $"fInicializaSDK = {r}: {SdkNative.Mensaje(r)}");
-                    return r;
+                    CambiarEstado(EstadoSesion.Error, DescribirFallo("fInicializaSDK", codigoInicio));
+                    return codigoInicio;
                 }
             }
 
-            var ruta = Normalizar(opciones.RutaEmpresa);
-            var a = traza.Llamar($"fAbreEmpresa('{ruta}')", () => SdkNative.fAbreEmpresa(ruta));
-            if (a != 0)
+            var codigoApertura = AbrirEmpresa(opciones.RutaEmpresa);
+            if (codigoApertura != 0)
             {
-                traza.Llamar("fTerminaSDK()", SdkNative.fTerminaSDK);
-                Cambiar(EstadoSesion.Error, $"fAbreEmpresa = {a}: {SdkNative.Mensaje(a)}");
-                return a;
+                traza.Llamar("fTerminaSDK()", funcionesSdk.TerminarSdk);
+                CambiarEstado(EstadoSesion.Error, DescribirFallo("fAbreEmpresa", codigoApertura));
+                return codigoApertura;
             }
 
-            Cambiar(EstadoSesion.Lista, "Empresa abierta.");
+            CambiarEstado(EstadoSesion.Lista, "Empresa abierta.");
             return 0;
         }
-        catch (Exception ex)
+        catch (Exception excepcion)
         {
             try
             {
-                Terminar();
+                CerrarEmpresaYTerminarSdk();
             }
             catch
             {
                 // Si el SDK ni siquiera carga (falta la DLL), no hay nada que terminar.
             }
 
-            Cambiar(EstadoSesion.Error, $"{ex.GetType().Name}: {ex.Message}");
+            CambiarEstado(EstadoSesion.Error, $"{excepcion.GetType().Name}: {excepcion.Message}");
             return -1;
         }
     }
@@ -199,53 +200,62 @@ public sealed class SesionContpaqi(OpcionesContpaqi opciones, TrazaSdk traza, IP
     /// Devuelve <c>null</c> si todo salió bien o el código de error, ya con el estado en Error.
     /// La clave no se escribe en la traza.
     /// </summary>
-    private int? IniciarConCredenciales()
+    private int? IniciarSesionConCredenciales()
     {
         if (proveedorClave is null)
         {
-            Cambiar(EstadoSesion.Error, "Inicio=Credenciales sin proveedor de clave configurado.");
+            CambiarEstado(EstadoSesion.Error, "Inicio=Credenciales sin proveedor de clave configurado.");
             return -1;
         }
 
         var usuario = opciones.Usuario;
         var clave = proveedorClave.ObtenerClave();
 
-        traza.Llamar($"fInicioSesionSDK('{usuario}','***')", () => SdkNative.fInicioSesionSDK(usuario, clave));
+        traza.Llamar($"fInicioSesionSDK('{usuario}','***')", () => funcionesSdk.IniciarSesion(usuario, clave));
 
         if (opciones.IniciarSesionContabilidad)
         {
-            traza.Llamar($"fInicioSesionSDKCONTPAQi('{usuario}','***')", () => SdkNative.fInicioSesionSDKCONTPAQi(usuario, clave));
+            traza.Llamar($"fInicioSesionSDKCONTPAQi('{usuario}','***')", () => funcionesSdk.IniciarSesionContabilidad(usuario, clave));
         }
 
-        var p = traza.Llamar($"fSetNombrePAQ('{opciones.NombrePaq}')", () => SdkNative.fSetNombrePAQ(opciones.NombrePaq));
-        if (p != 0)
+        var codigoNombrePaq = traza.Llamar($"fSetNombrePAQ('{opciones.NombrePaq}')", () => funcionesSdk.FijarNombrePaq(opciones.NombrePaq));
+        if (codigoNombrePaq != 0)
         {
-            traza.Llamar("fTerminaSDK()", SdkNative.fTerminaSDK);
-            Cambiar(
+            traza.Llamar("fTerminaSDK()", funcionesSdk.TerminarSdk);
+            CambiarEstado(
                 EstadoSesion.Error,
-                $"fSetNombrePAQ = {p}: {SdkNative.Mensaje(p)}. Si el usuario o la clave son incorrectos, el SDK lo informa aquí o en fAbreEmpresa.");
-            return p;
+                $"{DescribirFallo("fSetNombrePAQ", codigoNombrePaq)}. Si el usuario o la clave son incorrectos, el SDK lo informa aquí o en fAbreEmpresa.");
+            return codigoNombrePaq;
         }
 
         return null;
     }
 
-    /// <summary>El SDK solo acepta rutas con barra invertida: una ruta con / hace fallar fAbreEmpresa.</summary>
-    private static string Normalizar(string ruta) => ruta.Replace((char)47, (char)92);
+    private int AbrirEmpresa(string rutaEmpresa)
+    {
+        var rutaNormalizada = NormalizarRuta(rutaEmpresa);
+        return traza.Llamar($"fAbreEmpresa('{rutaNormalizada}')", () => funcionesSdk.AbrirEmpresa(rutaNormalizada));
+    }
 
-    private void Terminar()
+    private string DescribirFallo(string funcion, int codigo) =>
+        $"{funcion} = {codigo}: {funcionesSdk.ObtenerMensajeDeError(codigo)}";
+
+    /// <summary>El SDK solo acepta rutas con barra invertida: una ruta con / hace fallar fAbreEmpresa.</summary>
+    private static string NormalizarRuta(string ruta) => ruta.Replace('/', '\\');
+
+    private void CerrarEmpresaYTerminarSdk()
     {
         try
         {
-            traza.Llamar("fCierraEmpresa()", SdkNative.fCierraEmpresa);
+            traza.Llamar("fCierraEmpresa()", funcionesSdk.CerrarEmpresa);
         }
         finally
         {
-            traza.Llamar("fTerminaSDK()", SdkNative.fTerminaSDK);
+            traza.Llamar("fTerminaSDK()", funcionesSdk.TerminarSdk);
         }
     }
 
-    private void Cambiar(EstadoSesion estado, string mensaje)
+    private void CambiarEstado(EstadoSesion estado, string mensaje)
     {
         lock (_candado)
         {

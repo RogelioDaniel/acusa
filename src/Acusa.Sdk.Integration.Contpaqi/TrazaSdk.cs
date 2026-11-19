@@ -8,7 +8,7 @@ namespace Acusa.Sdk.Integration.Contpaqi;
 /// Registra cada llamada al SDK con su firma, el código que devuelve, el mensaje del SDK cuando el código
 /// no es 0 y el tiempo que tardó. Es lo que se ve en la consola cuando la API atiende una petición.
 /// </summary>
-public sealed class TrazaSdk(ILogger logger)
+public sealed class TrazaSdk(ILogger logger, Func<int, string>? obtenerMensajeDeError = null)
 {
     /// <summary>Código de <c>fBuscaCteProv</c> cuando no existe el registro: es un resultado normal.</summary>
     private const int NoEncontrado = SdkNative.NoEncontrado;
@@ -24,39 +24,39 @@ public sealed class TrazaSdk(ILogger logger)
             logger.LogInformation(">> {Firma}", firma);
         }
 
-        var reloj = Stopwatch.StartNew();
+        var cronometro = Stopwatch.StartNew();
         int codigo;
         try
         {
             codigo = llamada();
         }
-        catch (Exception ex)
+        catch (Exception excepcion)
         {
-            logger.LogError("!! {Firma} lanzó {Tipo}: {Mensaje}", firma, ex.GetType().Name, ex.Message);
+            logger.LogError("!! {Firma} lanzó {Tipo}: {Mensaje}", firma, excepcion.GetType().Name, excepcion.Message);
             throw;
         }
 
-        reloj.Stop();
-        Escribir(firma, codigo, reloj.ElapsedMilliseconds, valor);
+        cronometro.Stop();
+        Escribir(firma, codigo, cronometro.ElapsedMilliseconds, valor);
         return codigo;
     }
 
     /// <summary>Llamadas que no devuelven código (fCierraEmpresa, fTerminaSDK).</summary>
     public void Llamar(string firma, Action llamada)
     {
-        var reloj = Stopwatch.StartNew();
+        var cronometro = Stopwatch.StartNew();
         try
         {
             llamada();
         }
-        catch (Exception ex)
+        catch (Exception excepcion)
         {
-            logger.LogError("!! {Firma} lanzó {Tipo}: {Mensaje}", firma, ex.GetType().Name, ex.Message);
+            logger.LogError("!! {Firma} lanzó {Tipo}: {Mensaje}", firma, excepcion.GetType().Name, excepcion.Message);
             throw;
         }
 
-        reloj.Stop();
-        logger.LogInformation("{Firma} ok ({Ms} ms)", firma, reloj.ElapsedMilliseconds);
+        cronometro.Stop();
+        logger.LogInformation("{Firma} ok ({Ms} ms)", firma, cronometro.ElapsedMilliseconds);
     }
 
     private void Escribir(string firma, int codigo, long ms, Func<string>? valor)
@@ -68,7 +68,7 @@ public sealed class TrazaSdk(ILogger logger)
             return;
         }
 
-        var mensaje = SdkNative.Mensaje(codigo);
+        var mensaje = (obtenerMensajeDeError ?? SdkNative.Mensaje)(codigo);
         var nivel = codigo == NoEncontrado ? LogLevel.Information : LogLevel.Warning;
         logger.Log(nivel, "{Firma} = {Codigo} ({Mensaje}) ({Ms} ms)", firma, codigo, mensaje, ms);
     }

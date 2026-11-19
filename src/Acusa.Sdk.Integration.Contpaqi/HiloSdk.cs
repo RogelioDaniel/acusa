@@ -5,15 +5,16 @@ namespace Acusa.Sdk.Integration.Contpaqi;
 /// <summary>
 /// Hilo dedicado que ejecuta, de una en una, todas las llamadas al SDK. El SDK admite una empresa por
 /// proceso y una sola sesión, así que las llamadas se serializan y siempre salen del mismo hilo.
+/// Una excepción del trabajo llega a quien lo pidió y no detiene el hilo.
 /// </summary>
 internal sealed class HiloSdk : IDisposable
 {
-    private readonly BlockingCollection<Action> _cola = new();
+    private readonly BlockingCollection<Action> _trabajosPendientes = new();
     private readonly Thread _hilo;
 
     public HiloSdk()
     {
-        _hilo = new Thread(Bucle) { Name = "Acusa.Sdk", IsBackground = true };
+        _hilo = new Thread(AtenderTrabajos) { Name = "Acusa.Sdk", IsBackground = true };
         if (OperatingSystem.IsWindows())
         {
             // PowerShell ejecutó las pruebas del spike en un hilo STA; se conserva esa condición.
@@ -23,30 +24,38 @@ internal sealed class HiloSdk : IDisposable
         _hilo.Start();
     }
 
-    public Task<T> EjecutarAsync<T>(Func<T> trabajo)
+    public Task<TResultado> EjecutarAsync<TResultado>(Func<TResultado> trabajo)
     {
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _cola.Add(() =>
+        var finalizacion = new TaskCompletionSource<TResultado>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
         {
-            try
+            _trabajosPendientes.Add(() =>
             {
-                tcs.SetResult(trabajo());
-            }
-            catch (Exception ex)
-            {
-                tcs.SetException(ex);
-            }
-        });
-        return tcs.Task;
+                try
+                {
+                    finalizacion.SetResult(trabajo());
+                }
+                catch (Exception excepcion)
+                {
+                    finalizacion.SetException(excepcion);
+                }
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            finalizacion.SetException(new ObjectDisposedException(nameof(HiloSdk), "El hilo del SDK ya se cerró."));
+        }
+
+        return finalizacion.Task;
     }
 
-    private void Bucle()
+    private void AtenderTrabajos()
     {
-        foreach (var accion in _cola.GetConsumingEnumerable())
+        foreach (var trabajo in _trabajosPendientes.GetConsumingEnumerable())
         {
-            accion();
+            trabajo();
         }
     }
 
-    public void Dispose() => _cola.CompleteAdding();
+    public void Dispose() => _trabajosPendientes.CompleteAdding();
 }
