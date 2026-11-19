@@ -2,9 +2,6 @@ using System.Text.RegularExpressions;
 
 namespace Acusa.Contrato;
 
-/// <summary>
-/// Oculta en un texto lo que nunca debe llegar a un log: llaves de API y de worker, tokens, contraseñas y datos del certificado (CSD).
-/// </summary>
 public static partial class Redaccion
 {
     public const string Marca = "***";
@@ -32,7 +29,6 @@ public static partial class Redaccion
     [GeneratedRegex(@"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")]
     private static partial Regex TokenJwt();
 
-    // «campo»: «valor» / campo=valor para contraseña, clave, secreto, token, llave, password, pwd, csd, cer, key, pfx.
     [GeneratedRegex("(?<campo>\"?(?:contrase[nñ]a\\w*|password\\w*|passwd|pwd|clave\\w*|secre\\w*|token\\w*|llave\\w*|api[-_]?key|csd\\w*|certificado\\w*|pfx|\\.?key)\"?)(?<separador>\\s*[:=]\\s*)(?:\"[^\"]*\"|[^\\s,;}&]+)", RegexOptions.IgnoreCase)]
     private static partial Regex CampoSecreto();
 }

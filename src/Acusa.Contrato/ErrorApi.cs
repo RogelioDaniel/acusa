@@ -2,11 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace Acusa.Contrato;
 
-/// <summary>
-/// Cuerpo de toda respuesta de error de la API. <c>Codigo</c> es estable y sirve para programar; <c>Mensaje</c> es el texto para
-/// la persona; <c>Detalles</c> lista cada validación que falló. <c>IdCorrelacion</c> es el mismo valor de la cabecera
-/// <c>X-Correlation-Id</c> y aparece en los logs de la petición.
-/// </summary>
 public sealed record ErrorApi(
     string Codigo,
     string Mensaje,
@@ -15,7 +10,6 @@ public sealed record ErrorApi(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CodigoSdk = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TareaId = null);
 
-/// <summary>Valores de <see cref="ErrorApi.Codigo"/>.</summary>
 public static class CodigosError
 {
     public const string SolicitudInvalida = "solicitud_invalida";
@@ -30,7 +24,6 @@ public static class CodigosError
     public const string NoImplementado = "no_implementado";
     public const string ErrorInterno = "error_interno";
 
-    /// <summary>Código que corresponde a un estado HTTP cuando el error no indica uno propio.</summary>
     public static string DeEstado(int estado) => estado switch
     {
         400 => SolicitudInvalida,
