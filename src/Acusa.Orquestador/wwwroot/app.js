@@ -354,6 +354,8 @@ function recordar(metodo, ruta, cuerpoTexto, res) {
     const d = (j && j.resultado) || j || {};
     const doc = d.documento || d;
     if (doc.folio != null && doc.concepto != null) { memoria.set("concepto", String(doc.concepto)); memoria.set("serie", doc.serie ? String(doc.serie) : "-"); memoria.set("folio", String(doc.folio)); }
+    const recurso = /\/clientes/.test(ruta) ? "idCliente" : /\/productos/.test(ruta) ? "idProducto" : /\/documentos/.test(ruta) ? "idDocumento" : null;
+    if (recurso && j && j.id != null) memoria.set(recurso, String(j.id));
   } catch { /* respuesta de texto */ }
   if (metodo === "POST" && /\/(clientes|productos)$/.test(ruta)) {
     try { const c = JSON.parse(cuerpoTexto); if (c.codigo) memoria.set(/\/clientes$/.test(ruta) ? "codigoCliente" : "codigoProducto", c.codigo); } catch { /* sin cuerpo */ }
@@ -375,7 +377,7 @@ function consola({ metodo, ruta, op }) {
   const campos = {};
   const params = parametrosRuta(ruta);
   const filaParams = params.length ? h("div", { class: "dos" }, params.map((p) => {
-    const recordado = p === "codigo" ? memoria.get(ruta.includes("/clientes") ? "codigoCliente" : "codigoProducto") : memoria.get(p);
+    const recordado = p === "id" ? memoria.get(ruta.includes("/clientes") ? "idCliente" : ruta.includes("/productos") ? "idProducto" : "idDocumento") : memoria.get(p);
     const i = h("input", { value: recordado || "", "aria-label": p, spellcheck: "false" });
     campos[p] = i;
     return h("label", { class: "campo" }, h("span", null, p), i);
@@ -386,7 +388,18 @@ function consola({ metodo, ruta, op }) {
   const llave = metodo === "POST" ? h("input", { placeholder: "Idempotency-Key (opcional)", "aria-label": "Idempotency-Key" }) : null;
   const salida = h("div");
   const boton = h("button", { class: "boton" }, "Lanzar");
-  const destino = () => ruta.replace(/\{([^}]+)\}/g, (_, p) => encodeURIComponent((campos[p] && campos[p].value.trim()) || "{" + p + "}"));
+  const consultas = (op.parameters || []).filter((q) => q.in === "query");
+  const filaConsulta = consultas.length ? h("div", { class: "dos" }, consultas.map((q) => {
+    const recordado = q.name === "codigo" ? memoria.get(ruta.includes("/clientes") ? "codigoCliente" : "codigoProducto") : memoria.get(q.name);
+    const i = h("input", { value: recordado || "", "aria-label": q.name, placeholder: q.description || "", spellcheck: "false" });
+    campos["?" + q.name] = i;
+    return h("label", { class: "campo" }, h("span", null, q.name + (q.required ? "" : " (opcional)")), i);
+  })) : null;
+  const destino = () => {
+    const base = ruta.replace(/\{([^}]+)\}/g, (_, p) => encodeURIComponent((campos[p] && campos[p].value.trim()) || "{" + p + "}"));
+    const pares = consultas.map((q) => [q.name, campos["?" + q.name].value.trim()]).filter(([, v]) => v);
+    return pares.length ? base + "?" + pares.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&") : base;
+  };
 
   boton.addEventListener("click", async () => {
     const url = destino();
@@ -404,7 +417,7 @@ function consola({ metodo, ruta, op }) {
 
   return h("div", { class: "consola" },
     h("p", { class: "mono" }, h("b", null, metodo), "  ", ruta),
-    filaParams, area ? h("label", { class: "campo" }, h("span", null, "Cuerpo (JSON)"), area) : null,
+    filaParams, filaConsulta, area ? h("label", { class: "campo" }, h("span", null, "Cuerpo (JSON)"), area) : null,
     h("div", { class: "fila-acciones" }, boton, llave ? h("label", { class: "campo", style: "margin:0;flex:0 1 280px" }, llave) : null),
     salida);
 }
@@ -455,9 +468,9 @@ function vistaDevs(raiz) {
       h("p", { class: "sub" }, "Documentación interactiva: ", h("a", { href: "/api-docs/", target: "_blank" }, "/api-docs"), " · Definición OpenAPI: ", h("a", { href: "/api-docs/openapi.yaml", target: "_blank" }, "openapi.yaml"), "."),
       bloque("Dirección base", base),
       bloque("Autenticación", "Authorization: Bearer <llave de API ak_…>"),
-      bloque("Flujo de una factura", "POST /clientes  →  POST /productos  →  POST /documentos  →  POST /documentos/{concepto}/{serie}/{folio}/timbrado  →  GET …/xml   (todo bajo /api/empresas/{empresa})"),
+      bloque("Flujo de una factura", "POST /api/empresas/{empresa}/clientes  →  POST /api/empresas/{empresa}/productos  →  POST /api/empresas/{empresa}/documentos  →  POST /api/documentos/{id}/timbrar  →  GET /api/documentos/{id}/xml"),
       bloque("Respuesta de timbrado", `{ "uuid": "…", "estado": "timbrada", "xml": "<cfdi:Comprobante …>" }`),
-      h("p", { class: "nota", style: "margin-top:10px" }, "Cada petición espera al worker hasta 60 s; si no responde, la respuesta es 202 con la tarea. Los errores de validación responden 422 con { \"errors\": [ … ] }.")),
+      h("p", { class: "nota", style: "margin-top:10px" }, "Cada petición espera al worker hasta 30 s (se puede reducir con ?esperar=N); si no responde, la respuesta es 202 con la tarea. El timbrado y la cancelación de varios documentos responden 202 de inmediato. Los errores responden con { \"codigo\", \"mensaje\", \"detalles\": [ … ] }.")),
     tarjetaSesion(),
     catalogo);
 
@@ -482,9 +495,9 @@ function vistaDevs(raiz) {
 const SECCIONES = [
   { id: "clientes", titulo: "Clientes", descripcion: "Alta, consulta y actualización de clientes y sus direcciones.", filtro: (o) => o.tag === "Clientes" },
   { id: "productos", titulo: "Productos", descripcion: "Alta, consulta y actualización de productos y servicios.", filtro: (o) => o.tag === "Productos" },
-  { id: "facturas", titulo: "Facturas", descripcion: "Creación y consulta de documentos, individuales o por lote.", filtro: (o) => o.tag === "Documentos" && !/timbrado|xml|pdf|cancelacion/.test(o.ruta) },
-  { id: "timbrado", titulo: "Timbrado y archivos", descripcion: "Timbrado con XML en texto plano, XML y PDF.", filtro: (o) => o.tag === "Documentos" && /timbrado|xml|pdf/.test(o.ruta) },
-  { id: "cancelacion", titulo: "Cancelación", descripcion: "Cancelación de documentos timbrados, individual o por lote.", filtro: (o) => o.tag === "Documentos" && /cancelacion/.test(o.ruta) },
+  { id: "facturas", titulo: "Facturas", descripcion: "Creación y consulta de documentos, individuales o por lote.", filtro: (o) => o.tag === "Documentos" && !/timbrar|xml|pdf|cancelar/.test(o.ruta) },
+  { id: "timbrado", titulo: "Timbrado y archivos", descripcion: "Timbrado con XML en texto plano, XML y PDF.", filtro: (o) => o.tag === "Documentos" && /timbrar|xml|pdf/.test(o.ruta) },
+  { id: "cancelacion", titulo: "Cancelación", descripcion: "Cancelación de documentos timbrados, individual o por lote.", filtro: (o) => o.tag === "Documentos" && /cancelar/.test(o.ruta) },
   { id: "flujo", titulo: "Flujo completo", descripcion: "Cliente, producto, factura, timbrado, XML y cancelación en una sola corrida." },
   { id: "postman", titulo: "Colección de Postman", descripcion: "Cargue una colección y ejecute sus peticiones aquí." },
 ];
@@ -535,20 +548,20 @@ function flujoCompleto() {
     const hoy = new Date().toISOString().slice(0, 10);
     const sufijo = String(Date.now()).slice(-6);
     const E = `/api/empresas/${encodeURIComponent(empresa)}`;
-    const D = () => `${E}/documentos/${ctx.concepto}/${ctx.serie || "-"}/${ctx.folio}`;
+    const D = () => `/api/documentos/${ctx.documento}`;
     const llamar = async (m, ruta, c) => { const r = await enviar(m, ruta, c ? JSON.stringify(c) : null); recordar(m, ruta, c ? JSON.stringify(c) : "", r); return { ...r, ruta: `${m} ${ruta}` }; };
     const pasos = [
-      ["Cliente", async () => { ctx.cliente = "ACUSACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "CLIENTE ACUSA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000, codigoPostal: "06600" }); }],
+      ["Cliente", async () => { ctx.cliente = "ACUSACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "CLIENTE ACUSA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000, codigoPostal: "06600", pais: "México" }); }],
       ["Producto de $1", async () => { ctx.producto = "ACUSAPR" + sufijo; return llamar("POST", `${E}/productos`, { codigo: ctx.producto, nombre: "SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); }],
       ["Documento", async () => {
         const r = await llamar("POST", `${E}/documentos`, { concepto: "5", serie: "ACUSA", clienteCodigo: ctx.cliente, referencia: "ACUSAFAC" + sufijo, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }] });
-        try { const d = JSON.parse(r.datos).resultado; ctx.concepto = d.concepto; ctx.serie = d.serie; ctx.folio = d.folio; } catch { /* el siguiente paso no se corre */ }
+        try { ctx.documento = JSON.parse(r.datos).id; } catch { /* el siguiente paso no se corre */ }
         return r;
       }],
-      ["Timbrado (XML en texto plano)", () => llamar("POST", D() + "/timbrado")],
+      ["Timbrado (XML en texto plano)", () => llamar("POST", D() + "/timbrar")],
       ["XML del documento", () => llamar("GET", D() + "/xml")],
     ];
-    if (cancelar.checked) pasos.push(["Cancelación (motivo 02)", () => llamar("POST", D() + "/cancelacion", { motivo: "02" })]);
+    if (cancelar.checked) pasos.push(["Cancelación (motivo 02)", () => llamar("POST", D() + "/cancelar", { motivo: "02" })]);
 
     let fallo = false;
     for (let i = 0; i < pasos.length && !fallo; i++) {
