@@ -8,397 +8,1066 @@ using Acusa.Orquestador.Facturacion;
 
 namespace Acusa.Orquestador.Rest;
 
-/// <summary>
-/// API REST de Acusa Central: los procesos que ejecuta el worker en CONTPAQi Comercial (clientes, productos, documentos, timbrado,
-/// archivos y cancelación), expuestos como recursos en lugar de una sola ruta con <c>tipoProceso</c>. La empresa de CONTPAQi va en
-/// la ruta (<c>/api/empresas/{empresa}/…</c>). Cada petición espera al worker hasta 60 s: si responde, la misma respuesta trae el
-/// resultado; si no, responde 202 con la tarea. <c>Idempotency-Key</c> evita duplicar una escritura al reintentar.
-/// </summary>
 public static class ApiRest
 {
-    private delegate Task<IResult> Manejo(Contexto c);
+    public const string TipoCliente = "cliente";
+    public const string TipoProducto = "producto";
+    public const string TipoDocumento = "documento";
 
-    private sealed record Contexto(HttpContext Http, Identidad Quien, IEjecutorOrdenes Ejecutor, Opciones Opciones, string Empresa, JsonObject? Cuerpo, string? Llave, CancellationToken Ct)
+    private const int DireccionFiscal = 0;
+    private const int DireccionEnvio = 1;
+
+    private static readonly string[] CamposDireccion = ["calle", "numeroExterior", "numeroInterior", "colonia", "codigoPostal", "municipio", "ciudad", "estado", "pais"];
+
+    private delegate Task<IResult> Manejo(Contexto contexto);
+
+    private sealed record Contexto(
+        HttpContext Http,
+        Identidad Quien,
+        Almacen Almacen,
+        IEjecutorOrdenes Ejecutor,
+        Opciones Opciones,
+        string Empresa,
+        RecursoAcusa? Recurso,
+        JsonObject? Cuerpo,
+        string? Llave,
+        CancellationToken Cancelacion)
     {
-        public string Ruta(string nombre) => Convert.ToString(Http.Request.RouteValues[nombre], CultureInfo.InvariantCulture) ?? string.Empty;
-    }
+        public string Consulta(string nombre) => Http.Request.Query[nombre].FirstOrDefault()?.Trim() ?? string.Empty;
 
-    public static void Mapear(WebApplication app)
-    {
-        // ---- Empresas -----------------------------------------------------------------------------------------------
-        app.MapGet("/api/empresas", (HttpContext http, Almacen a, Seguridad s) =>
-            Facturacion.FacturacionRutas.AutenticarPublico(http, a, s) is { } q
-                ? Results.Json(a.EmpresasDelCliente(q.ClienteId))
-                : NoAutorizado());
-
-        var e = app.MapGroup("/api/empresas/{empresa}");
-
-        // ---- Clientes -----------------------------------------------------------------------------------------------
-        Ruta(e, "POST", "/clientes", true, CrearClienteAsync);
-        Ruta(e, "POST", "/clientes/{codigo}/direcciones", true, c =>
+        public string? LlaveCon(string sufijo)
         {
-            var p = Campos(c.Cuerpo!, "tipo", "calle", "numeroExterior", "numeroInterior", "colonia", "codigoPostal", "municipio", "ciudad", "estado", "pais");
-            p["codigoCliente"] = c.Ruta("codigo");
-            return Orden(c, Operaciones.DireccionCrear, p, 201, Requeridos(c.Cuerpo!, ("codigoPostal", "Codigo postal")));
-        });
-        Ruta(e, "GET", "/clientes/{codigo}/direcciones/{tipo}", false, c => Orden(c, Operaciones.DireccionLeer, new { codigoCliente = c.Ruta("codigo"), tipo = c.Ruta("tipo") }));
-        Ruta(e, "GET", "/clientes/{codigo}", false, c => Orden(c, Operaciones.ClienteLeer, new { codigo = c.Ruta("codigo") }));
-        Ruta(e, "PATCH", "/clientes/{codigo}", true, ActualizarClienteAsync);
-
-        // ---- Productos ----------------------------------------------------------------------------------------------
-        Ruta(e, "POST", "/productos", true, c => Orden(c, Operaciones.ProductoCrear, Campos(c.Cuerpo!, "codigo", "nombre", "unidadBase", "precio1", "descripcion", "claveSat", "tipoProducto", "textosExtra"), 201,
-            Requeridos(c.Cuerpo!, ("codigo", "Codigo"), ("nombre", "Nombre"), ("unidadBase", "Unidad base"))));
-        Ruta(e, "GET", "/productos/{codigo}", false, c => Orden(c, Operaciones.ProductoLeer, new { codigo = c.Ruta("codigo") }));
-        Ruta(e, "PATCH", "/productos/{codigo}", true, c =>
-        {
-            var p = Campos(c.Cuerpo!, "nombre", "descripcion", "precio1", "claveSat", "textosExtra");
-            p["codigo"] = c.Ruta("codigo");
-            return Orden(c, Operaciones.ProductoActualizar, p, 200, p.Count == 1 ? ["No hay datos que actualizar"] : []);
-        });
-
-        // ---- Documentos ---------------------------------------------------------------------------------------------
-        Ruta(e, "POST", "/documentos", true, CrearDocumentoAsync);
-        Ruta(e, "POST", "/documentos/timbrado", true, c => LoteAsync(c, Operaciones.DocumentoEmitirLote, cancelar: false));
-        Ruta(e, "POST", "/documentos/cancelacion", true, c => LoteAsync(c, Operaciones.DocumentoCancelarLote, cancelar: true));
-        Ruta(e, "GET", "/documentos/{concepto}/{serie}/{folio}", false, LeerDocumentoAsync);
-        Ruta(e, "POST", "/documentos/{concepto}/{serie}/{folio}/timbrado", false, TimbrarAsync);
-        Ruta(e, "GET", "/documentos/{concepto}/{serie}/{folio}/xml", false, c => ArchivoAsync(c, "xml"));
-        Ruta(e, "GET", "/documentos/{concepto}/{serie}/{folio}/pdf", false, c => ArchivoAsync(c, "pdf"));
-        Ruta(e, "POST", "/documentos/{concepto}/{serie}/{folio}/cancelacion", true, CancelarAsync);
-    }
-
-    // ------------------------------------------------------------------------------------------------------------------
-    // Mapeo de rutas
-    // ------------------------------------------------------------------------------------------------------------------
-
-    private static void Ruta(RouteGroupBuilder g, string metodo, string patron, bool conCuerpo, Manejo f) =>
-        g.MapMethods(patron, [metodo], async (HttpContext http, Almacen a, Seguridad s, IEjecutorOrdenes ejecutor, Opciones o) =>
-        {
-            if (Facturacion.FacturacionRutas.AutenticarPublico(http, a, s) is not { } quien) return NoAutorizado();
-            PeticionActual.Texto = $"{metodo} {http.Request.Path}";
-
-            var empresa = Convert.ToString(http.Request.RouteValues["empresa"], CultureInfo.InvariantCulture) ?? string.Empty;
-            if (!a.EmpresaDelCliente(quien.ClienteId, empresa)) return Errores.Json(404, $"La empresa '{empresa}' no está registrada para este cliente.");
-
-            JsonObject? cuerpo = null;
-            if (conCuerpo)
+            if (Llave is null)
             {
-                try { cuerpo = await http.Request.ReadFromJsonAsync<JsonObject>(http.RequestAborted); }
-                catch (Exception ex) when (ex is JsonException or InvalidOperationException or BadHttpRequestException) { return Errores.Json(400, "El cuerpo no es un objeto JSON válido."); }
-                if (cuerpo is null) return Errores.Json(400, "El cuerpo es obligatorio.");
-                if (JsonSerializer.SerializeToElement(cuerpo) is { ValueKind: JsonValueKind.Object } objeto && CamposSecretos.Buscar(objeto) is { } campo)
+                return null;
+            }
+
+            return Llave + ":" + sufijo;
+        }
+
+        public Task<ResultadoOrden> Ejecutar(string tipo, object payload, string? llave) =>
+            Ejecutor.EjecutarAsync(Quien.ClienteId, Empresa, tipo, payload, llave, Cancelacion);
+    }
+
+    public static void Mapear(WebApplication aplicacion)
+    {
+        aplicacion.MapGet("/api/empresas", (HttpContext http, Almacen almacen, Seguridad seguridad) =>
+        {
+            if (FacturacionRutas.AutenticarPublico(http, almacen, seguridad) is not { } quien)
+            {
+                return Errores.NoAutorizado();
+            }
+
+            return Results.Json(almacen.EmpresasDelCliente(quien.ClienteId));
+        });
+
+        var porEmpresa = aplicacion.MapGroup("/api/empresas/{empresa}");
+        RutaDeEmpresa(porEmpresa, "POST", "/clientes", true, CrearClienteAsync);
+        RutaDeEmpresa(porEmpresa, "GET", "/clientes", false, BuscarClienteAsync);
+        RutaDeEmpresa(porEmpresa, "POST", "/productos", true, CrearProductoAsync);
+        RutaDeEmpresa(porEmpresa, "GET", "/productos", false, BuscarProductoAsync);
+        RutaDeEmpresa(porEmpresa, "POST", "/documentos", true, CrearDocumentoAsync);
+        RutaDeEmpresa(porEmpresa, "GET", "/documentos", false, BuscarDocumentoAsync);
+
+        RutaDeRecurso(aplicacion, "GET", "/api/clientes/{id:long}", TipoCliente, false, LeerClienteAsync);
+        RutaDeRecurso(aplicacion, "PATCH", "/api/clientes/{id:long}", TipoCliente, true, ActualizarClienteAsync);
+        RutaDeRecurso(aplicacion, "GET", "/api/clientes/{id:long}/direcciones", TipoCliente, false, LeerDireccionesAsync);
+        RutaDeRecurso(aplicacion, "POST", "/api/clientes/{id:long}/direcciones", TipoCliente, true, CrearDireccionAsync);
+        RutaDeRecurso(aplicacion, "PATCH", "/api/clientes/{id:long}/direcciones", TipoCliente, true, ActualizarDireccionAsync);
+
+        RutaDeRecurso(aplicacion, "GET", "/api/productos/{id:long}", TipoProducto, false, LeerProductoAsync);
+        RutaDeRecurso(aplicacion, "PATCH", "/api/productos/{id:long}", TipoProducto, true, ActualizarProductoAsync);
+
+        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}", TipoDocumento, false, LeerDocumentoAsync);
+        RutaDeRecurso(aplicacion, "POST", "/api/documentos/{id:long}/timbrar", TipoDocumento, false, TimbrarAsync);
+        RutaDeRecurso(aplicacion, "POST", "/api/documentos/{id:long}/cancelar", TipoDocumento, true, CancelarAsync);
+        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/xml", TipoDocumento, false, contexto => ArchivoAsync(contexto, "xml"));
+        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/pdf", TipoDocumento, false, contexto => ArchivoAsync(contexto, "pdf"));
+
+        RutaGeneral(aplicacion, "POST", "/api/documentos/timbrar", true, contexto => VariosAsync(contexto, cancelar: false));
+        RutaGeneral(aplicacion, "POST", "/api/documentos/cancelar", true, contexto => VariosAsync(contexto, cancelar: true));
+    }
+
+    private static void RutaDeEmpresa(RouteGroupBuilder grupo, string metodo, string patron, bool conCuerpo, Manejo manejo) =>
+        grupo.MapMethods(patron, [metodo], (HttpContext http, Almacen almacen, Seguridad seguridad, IEjecutorOrdenes ejecutor, Opciones opciones) =>
+        {
+            var empresa = Convert.ToString(http.Request.RouteValues["empresa"], CultureInfo.InvariantCulture) ?? string.Empty;
+            return AtenderAsync(http, almacen, seguridad, ejecutor, opciones, conCuerpo, manejo, quien =>
+            {
+                if (!almacen.EmpresaDelCliente(quien.ClienteId, empresa))
                 {
-                    return Errores.Json(400, $"El campo '{campo}' parece una contraseña y no se acepta: la contraseña del certificado se configura en el worker.");
+                    return (null, null, Errores.Json(404, $"La empresa '{empresa}' no está registrada para este cliente."));
+                }
+
+                return (empresa, null, null);
+            });
+        });
+
+    private static void RutaDeRecurso(WebApplication aplicacion, string metodo, string patron, string tipo, bool conCuerpo, Manejo manejo) =>
+        aplicacion.MapMethods(patron, [metodo], (HttpContext http, Almacen almacen, Seguridad seguridad, IEjecutorOrdenes ejecutor, Opciones opciones) =>
+        {
+            var texto = Convert.ToString(http.Request.RouteValues["id"], CultureInfo.InvariantCulture);
+            return AtenderAsync(http, almacen, seguridad, ejecutor, opciones, conCuerpo, manejo, quien =>
+            {
+                if (!long.TryParse(texto, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                    || almacen.BuscarRecurso(quien.ClienteId, tipo, id) is not { } recurso
+                    || !almacen.EmpresaDelCliente(quien.ClienteId, recurso.Empresa))
+                {
+                    return (null, null, Errores.Json(404, $"No existe el {tipo} {texto}."));
+                }
+
+                return (recurso.Empresa, recurso, null);
+            });
+        });
+
+    private static void RutaGeneral(WebApplication aplicacion, string metodo, string patron, bool conCuerpo, Manejo manejo) =>
+        aplicacion.MapMethods(patron, [metodo], (HttpContext http, Almacen almacen, Seguridad seguridad, IEjecutorOrdenes ejecutor, Opciones opciones) =>
+            AtenderAsync(http, almacen, seguridad, ejecutor, opciones, conCuerpo, manejo, quien => (string.Empty, null, null)));
+
+    private static async Task<IResult> AtenderAsync(
+        HttpContext http,
+        Almacen almacen,
+        Seguridad seguridad,
+        IEjecutorOrdenes ejecutor,
+        Opciones opciones,
+        bool conCuerpo,
+        Manejo manejo,
+        Func<Identidad, (string? Empresa, RecursoAcusa? Recurso, IResult? Error)> resolver)
+    {
+        if (FacturacionRutas.AutenticarPublico(http, almacen, seguridad) is not { } quien)
+        {
+            return Errores.NoAutorizado();
+        }
+
+        PeticionActual.Texto = $"{http.Request.Method} {http.Request.Path}";
+        var esperaPedida = http.Request.Query["esperar"].FirstOrDefault();
+        PeticionActual.EsperaSegundos = null;
+        if (int.TryParse(esperaPedida, NumberStyles.None, CultureInfo.InvariantCulture, out var segundos))
+        {
+            PeticionActual.EsperaSegundos = segundos;
+        }
+
+        var (empresa, recurso, error) = resolver(quien);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        JsonObject? cuerpo = null;
+        if (conCuerpo)
+        {
+            try
+            {
+                cuerpo = await http.Request.ReadFromJsonAsync<JsonObject>(http.RequestAborted);
+            }
+            catch (Exception excepcion) when (excepcion is JsonException or InvalidOperationException or BadHttpRequestException)
+            {
+                return Errores.Json(400, "El cuerpo no es un objeto JSON válido.");
+            }
+
+            if (cuerpo is null)
+            {
+                return Errores.Json(400, "El cuerpo es obligatorio.");
+            }
+
+            if (JsonSerializer.SerializeToElement(cuerpo) is { ValueKind: JsonValueKind.Object } objeto && CamposSecretos.Buscar(objeto) is { } campo)
+            {
+                return Errores.Json(400, $"El campo '{campo}' parece una contraseña y no se acepta: la contraseña del certificado se configura en el worker.");
+            }
+        }
+
+        var llave = http.Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
+        if (string.IsNullOrEmpty(llave))
+        {
+            llave = null;
+        }
+        else if (llave.Length > 100 || !llave.All(caracter => char.IsAsciiLetterOrDigit(caracter) || caracter is '-' or '_' or '.' or ':'))
+        {
+            return Errores.Json(400, "Idempotency-Key admite hasta 100 caracteres: letras, números, guion, guion bajo, punto y dos puntos.");
+        }
+
+        return await manejo(new Contexto(http, quien, almacen, ejecutor, opciones, empresa!, recurso, cuerpo, llave, http.RequestAborted));
+    }
+
+    private static async Task<IResult> Orden(Contexto contexto, string tipo, object payload, int estadoCorrecto = 200, IReadOnlyList<string>? errores = null)
+    {
+        if (errores is { Count: > 0 })
+        {
+            return Errores.Validacion(errores);
+        }
+
+        var resultado = await contexto.Ejecutar(tipo, payload, contexto.Llave);
+        return Responder(contexto, resultado, estadoCorrecto);
+    }
+
+    private static IResult Responder(Contexto contexto, ResultadoOrden resultado, int estadoCorrecto = 200, long? id = null)
+    {
+        if (resultado.Ok)
+        {
+            return Results.Json(new { id, tareaId = resultado.TareaId, resultado = resultado.Datos }, statusCode: estadoCorrecto);
+        }
+
+        if (resultado.EnCurso)
+        {
+            return EnProceso(contexto, resultado.TareaId, id);
+        }
+
+        return Errores.DeTareaJson(resultado.Error, resultado.CodigoSdk, resultado.TareaId);
+    }
+
+    private static IResult EnProceso(Contexto contexto, string? tareaId, long? id = null)
+    {
+        contexto.Http.Response.Headers.Location = $"/api/sdk/tasks/{tareaId}";
+        return Results.Json(new { id, tareaId, estado = "EnProceso", mensaje = "El worker sigue trabajando; consulte la tarea." }, statusCode: 202);
+    }
+
+    private static async Task<IResult> CrearClienteAsync(Contexto contexto)
+    {
+        var cuerpo = contexto.Cuerpo!;
+        var errores = Requeridos(cuerpo, ("codigo", "Codigo"), ("razonSocial", "Razon social"), ("rfc", "Rfc"), ("codigoPostal", "Codigo postal"), ("pais", "Pais"));
+        ValidarCodigoPostal(cuerpo, errores);
+        if (errores.Count > 0)
+        {
+            return Errores.Validacion(errores);
+        }
+
+        var codigo = Texto(cuerpo["codigo"])!.Trim();
+        var id = contexto.Almacen.RegistrarRecurso(contexto.Quien.ClienteId, TipoCliente, contexto.Empresa, codigo);
+        var cliente = await contexto.Ejecutar(
+            Operaciones.ClienteCrear,
+            Campos(cuerpo, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "regimenFiscal", "usoCfdi"),
+            contexto.LlaveCon("cliente"));
+        if (!cliente.Ok)
+        {
+            return Responder(contexto, cliente, 201, id);
+        }
+
+        var direccion = DatosDeDireccion(cuerpo, codigo, DireccionFiscal);
+        var guardado = await contexto.Ejecutar(Operaciones.DireccionCrear, direccion, contexto.LlaveCon("direccion"));
+        if (guardado.EnCurso)
+        {
+            return EnProceso(contexto, guardado.TareaId, id);
+        }
+
+        if (!guardado.Ok)
+        {
+            var error = Errores.DeTarea(guardado.Error, guardado.CodigoSdk, guardado.TareaId) with
+            {
+                Mensaje = $"El cliente {codigo} se creó, pero no se pudo guardar su dirección fiscal. Guárdela con POST /api/clientes/{id}/direcciones.",
+            };
+            return Results.Json(error, statusCode: 422);
+        }
+
+        return Results.Json(new { id, tareaId = guardado.TareaId, resultado = ClienteConDireccion(cliente, guardado) }, statusCode: 201);
+    }
+
+    private static Task<IResult> BuscarClienteAsync(Contexto contexto) =>
+        BuscarPorCodigoAsync(contexto, TipoCliente, Operaciones.ClienteLeer);
+
+    private static Task<IResult> BuscarProductoAsync(Contexto contexto) =>
+        BuscarPorCodigoAsync(contexto, TipoProducto, Operaciones.ProductoLeer);
+
+    private static async Task<IResult> BuscarPorCodigoAsync(Contexto contexto, string tipo, string operacion)
+    {
+        var codigo = contexto.Consulta("codigo");
+        if (codigo.Length == 0)
+        {
+            return Errores.Validacion(["Codigo no puede estar vacio"]);
+        }
+
+        var resultado = await contexto.Ejecutar(operacion, new { codigo }, null);
+        if (!resultado.Ok)
+        {
+            return Responder(contexto, resultado);
+        }
+
+        var id = contexto.Almacen.RegistrarRecurso(contexto.Quien.ClienteId, tipo, contexto.Empresa, codigo);
+        return Responder(contexto, resultado, 200, id);
+    }
+
+    private static Task<IResult> LeerClienteAsync(Contexto contexto) =>
+        Orden(contexto, Operaciones.ClienteLeer, new { codigo = contexto.Recurso!.Clave });
+
+    private static async Task<IResult> ActualizarClienteAsync(Contexto contexto)
+    {
+        var cuerpo = contexto.Cuerpo!;
+        var codigo = contexto.Recurso!.Clave;
+        var cambios = Campos(cuerpo, "razonSocial", "rfc", "limiteCredito", "regimenFiscal", "usoCfdi");
+        if (cambios.Count == 0)
+        {
+            return Errores.Validacion(["No hay datos que actualizar; la dirección se actualiza con PATCH /api/clientes/{id}/direcciones"]);
+        }
+
+        cambios["codigo"] = codigo;
+        return await Orden(contexto, Operaciones.ClienteActualizar, cambios);
+    }
+
+    private static async Task<IResult> LeerDireccionesAsync(Contexto contexto)
+    {
+        var codigo = contexto.Recurso!.Clave;
+        var tipos = new List<int> { DireccionFiscal, DireccionEnvio };
+        var tipoPedido = contexto.Consulta("tipo");
+        if (tipoPedido.Length > 0)
+        {
+            if (!TipoDireccionValido(tipoPedido, out var tipoFiltrado))
+            {
+                return Errores.Validacion(["Tipo de dirección debe ser 0 (fiscal) o 1 (envío)"]);
+            }
+
+            tipos = [tipoFiltrado];
+        }
+
+        var direcciones = new JsonArray();
+        string? ultimaTarea = null;
+        foreach (var tipo in tipos)
+        {
+            var lectura = await contexto.Ejecutar(Operaciones.DireccionLeer, new { codigoCliente = codigo, tipo }, null);
+            ultimaTarea = lectura.TareaId;
+            if (lectura.Ok && lectura.Datos is { } datos)
+            {
+                direcciones.Add(JsonNode.Parse(datos.GetRawText()));
+                continue;
+            }
+
+            if (lectura.EnCurso)
+            {
+                return EnProceso(contexto, lectura.TareaId, contexto.Recurso.Id);
+            }
+
+            if (!EsDireccionInexistente(lectura))
+            {
+                return Responder(contexto, lectura);
+            }
+        }
+
+        return Results.Json(new { id = contexto.Recurso.Id, tareaId = ultimaTarea, resultado = direcciones });
+    }
+
+    private static async Task<IResult> CrearDireccionAsync(Contexto contexto)
+    {
+        var cuerpo = contexto.Cuerpo!;
+        var errores = Requeridos(cuerpo, ("codigoPostal", "Codigo postal"), ("pais", "Pais"));
+        ValidarCodigoPostal(cuerpo, errores);
+        var tipo = LeerTipoDireccion(cuerpo, errores);
+        if (errores.Count > 0)
+        {
+            return Errores.Validacion(errores);
+        }
+
+        var codigo = contexto.Recurso!.Clave;
+        var existente = await contexto.Ejecutar(Operaciones.DireccionLeer, new { codigoCliente = codigo, tipo }, null);
+        if (existente.EnCurso)
+        {
+            return EnProceso(contexto, existente.TareaId, contexto.Recurso.Id);
+        }
+
+        if (existente.Ok)
+        {
+            return Errores.Json(409, $"El cliente ya tiene dirección de tipo {tipo}; actualícela con PATCH /api/clientes/{contexto.Recurso.Id}/direcciones.");
+        }
+
+        if (!EsDireccionInexistente(existente))
+        {
+            return Responder(contexto, existente);
+        }
+
+        var guardado = await contexto.Ejecutar(Operaciones.DireccionCrear, DatosDeDireccion(cuerpo, codigo, tipo), contexto.Llave);
+        return Responder(contexto, guardado, 201, contexto.Recurso.Id);
+    }
+
+    private static async Task<IResult> ActualizarDireccionAsync(Contexto contexto)
+    {
+        var cuerpo = contexto.Cuerpo!;
+        var errores = new List<string>();
+        ValidarCodigoPostal(cuerpo, errores);
+        var tipo = LeerTipoDireccion(cuerpo, errores);
+        if (!CamposDireccion.Any(campo => cuerpo[campo] is not null))
+        {
+            errores.Add("No hay datos de dirección que actualizar");
+        }
+
+        foreach (var campo in new[] { ("codigoPostal", "Codigo postal"), ("pais", "Pais") })
+        {
+            if (cuerpo[campo.Item1] is not null && string.IsNullOrWhiteSpace(Texto(cuerpo[campo.Item1])))
+            {
+                errores.Add($"{campo.Item2} no puede estar vacio");
+            }
+        }
+
+        if (errores.Count > 0)
+        {
+            return Errores.Validacion(errores);
+        }
+
+        var codigo = contexto.Recurso!.Clave;
+        var existente = await contexto.Ejecutar(Operaciones.DireccionLeer, new { codigoCliente = codigo, tipo }, null);
+        if (existente.EnCurso)
+        {
+            return EnProceso(contexto, existente.TareaId, contexto.Recurso.Id);
+        }
+
+        if (!existente.Ok)
+        {
+            if (EsDireccionInexistente(existente))
+            {
+                return Errores.Json(404, $"El cliente no tiene dirección de tipo {tipo}; créela con POST /api/clientes/{contexto.Recurso.Id}/direcciones.");
+            }
+
+            return Responder(contexto, existente);
+        }
+
+        var combinada = new JsonObject();
+        if (existente.Datos is { ValueKind: JsonValueKind.Object } actual)
+        {
+            foreach (var campo in CamposDireccion)
+            {
+                if (actual.TryGetProperty(campo, out var valor) && valor.ValueKind != JsonValueKind.Null)
+                {
+                    combinada[campo] = JsonNode.Parse(valor.GetRawText());
+                }
+            }
+        }
+
+        foreach (var campo in CamposDireccion)
+        {
+            if (cuerpo[campo] is { } valor)
+            {
+                combinada[campo] = valor.DeepClone();
+            }
+        }
+
+        combinada["codigoCliente"] = codigo;
+        combinada["tipo"] = tipo;
+        var guardado = await contexto.Ejecutar(Operaciones.DireccionCrear, combinada, contexto.Llave);
+        return Responder(contexto, guardado, 200, contexto.Recurso.Id);
+    }
+
+    private static async Task<IResult> CrearProductoAsync(Contexto contexto)
+    {
+        var cuerpo = contexto.Cuerpo!;
+        var errores = Requeridos(cuerpo, ("codigo", "Codigo"), ("nombre", "Nombre"), ("unidadBase", "Unidad base"));
+        if (errores.Count > 0)
+        {
+            return Errores.Validacion(errores);
+        }
+
+        var codigo = Texto(cuerpo["codigo"])!.Trim();
+        var id = contexto.Almacen.RegistrarRecurso(contexto.Quien.ClienteId, TipoProducto, contexto.Empresa, codigo);
+        var datos = Campos(cuerpo, "codigo", "nombre", "unidadBase", "precio1", "descripcion", "claveSat", "tipoProducto", "textosExtra");
+        var resultado = await contexto.Ejecutar(Operaciones.ProductoCrear, datos, contexto.Llave);
+        return Responder(contexto, resultado, 201, id);
+    }
+
+    private static Task<IResult> LeerProductoAsync(Contexto contexto) =>
+        Orden(contexto, Operaciones.ProductoLeer, new { codigo = contexto.Recurso!.Clave });
+
+    private static Task<IResult> ActualizarProductoAsync(Contexto contexto)
+    {
+        var cambios = Campos(contexto.Cuerpo!, "nombre", "descripcion", "precio1", "claveSat", "textosExtra");
+        var errores = new List<string>();
+        if (cambios.Count == 0)
+        {
+            errores.Add("No hay datos que actualizar");
+        }
+
+        cambios["codigo"] = contexto.Recurso!.Clave;
+        return Orden(contexto, Operaciones.ProductoActualizar, cambios, 200, errores);
+    }
+
+    private static async Task<IResult> CrearDocumentoAsync(Contexto contexto)
+    {
+        var cuerpo = contexto.Cuerpo!;
+        var errores = new List<string>();
+        foreach (var (campo, etiqueta) in new[] { ("concepto", "Concepto"), ("fecha", "Fecha"), ("formaPago", "Forma de pago"), ("usoCfdi", "Uso de CFDI"), ("regimenFiscal", "Regimen fiscal") })
+        {
+            if (string.IsNullOrWhiteSpace(Texto(cuerpo[campo])))
+            {
+                errores.Add($"{etiqueta} no puede estar vacio");
+            }
+        }
+
+        if (Texto(cuerpo["fecha"]) is { Length: > 0 } fecha && !DateOnly.TryParseExact(fecha, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+        {
+            errores.Add("Fecha debe tener el formato aaaa-mm-dd");
+        }
+
+        if (Texto(cuerpo["formaPago"]) is { Length: > 0 } formaPago && !FacturacionServicio.FormasDePago.ContainsKey(formaPago))
+        {
+            errores.Add("Forma de pago no es una clave del SAT");
+        }
+
+        if (Texto(cuerpo["usoCfdi"]) is { Length: > 0 } usoCfdi && !FacturacionServicio.UsosCfdi.ContainsKey(usoCfdi.ToUpperInvariant()))
+        {
+            errores.Add("Uso de CFDI no es una clave del SAT");
+        }
+
+        if (Texto(cuerpo["regimenFiscal"]) is { Length: > 0 } regimen && !FacturacionServicio.Regimenes.ContainsKey(regimen))
+        {
+            errores.Add("Regimen fiscal no es una clave del SAT");
+        }
+
+        var clienteCodigo = ResolverCodigo(contexto, cuerpo, "clienteId", "clienteCodigo", TipoCliente, "Cliente", errores);
+        var movimientos = (cuerpo["movimientos"] as JsonArray)?.OfType<JsonObject>().ToList() ?? [];
+        if (movimientos.Count == 0)
+        {
+            errores.Add("Movimientos: se necesita al menos uno");
+        }
+
+        var partidas = new List<object>();
+        for (var indice = 0; indice < movimientos.Count; indice++)
+        {
+            var movimiento = movimientos[indice];
+            var etiqueta = $"Movimiento {indice + 1}: producto";
+            var productoCodigo = ResolverCodigo(contexto, movimiento, "productoId", "productoCodigo", TipoProducto, etiqueta, errores);
+            if (Numero(movimiento["unidades"]) is not > 0)
+            {
+                errores.Add($"Movimiento {indice + 1}: unidades debe ser mayor que 0");
+            }
+
+            if (Numero(movimiento["precio"]) is not >= 0)
+            {
+                errores.Add($"Movimiento {indice + 1}: precio debe ser 0 o mayor");
+            }
+
+            foreach (var campo in new[] { "ivaPorcentaje", "retencionIvaPorcentaje", "iepsPorcentaje" })
+            {
+                if (Numero(movimiento[campo]) is < 0 or > 100)
+                {
+                    errores.Add($"Movimiento {indice + 1}: {campo} debe estar entre 0 y 100");
                 }
             }
 
-            var llave = http.Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
-            if (!string.IsNullOrEmpty(llave) && (llave.Length > 100 || !llave.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' or '.' or ':')))
+            var almacen = contexto.Opciones.FacturacionAlmacen;
+            if (Texto(movimiento["almacen"]) is { Length: > 0 } almacenPedido)
             {
-                return Errores.Json(400, "Idempotency-Key admite hasta 100 caracteres: letras, números, guion, guion bajo, punto y dos puntos.");
+                almacen = almacenPedido.Trim();
             }
 
-            return await f(new Contexto(http, quien, ejecutor, o, empresa, cuerpo, string.IsNullOrEmpty(llave) ? null : llave, http.RequestAborted));
-        });
-
-    private static IResult NoAutorizado() => Errores.NoAutorizado();
-
-    // ------------------------------------------------------------------------------------------------------------------
-    // Una orden simple
-    // ------------------------------------------------------------------------------------------------------------------
-
-    private static async Task<IResult> Orden(Contexto c, string tipo, object payload, int estadoOk = 200, IReadOnlyList<string>? errores = null)
-    {
-        if (errores is { Count: > 0 }) return Errores.Validacion(errores);
-        var r = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, tipo, payload, c.Llave, c.Ct);
-        return Responder(c, r, estadoOk);
-    }
-
-    private static IResult Responder(Contexto c, ResultadoOrden r, int estadoOk = 200)
-    {
-        if (r.Ok) return Results.Json(new { tareaId = r.TareaId, resultado = r.Datos }, statusCode: estadoOk);
-        if (r.EnCurso)
-        {
-            c.Http.Response.Headers.Location = $"/api/sdk/tasks/{r.TareaId}";
-            return Results.Json(new { tareaId = r.TareaId, estado = "EnProceso", mensaje = "El worker no respondió a tiempo; consulte la tarea." }, statusCode: 202);
-        }
-
-        return Errores.DeTareaJson(r.Error, r.CodigoSdk, r.TareaId);
-    }
-
-    // ------------------------------------------------------------------------------------------------------------------
-    // Clientes
-    // ------------------------------------------------------------------------------------------------------------------
-
-    private static readonly string[] CamposDireccion = ["calle", "numeroExterior", "numeroInterior", "colonia", "municipio", "ciudad", "estado", "pais"];
-
-    private static bool CodigoPostalValido(string? cp) => cp is { Length: 5 } && cp.All(char.IsAsciiDigit);
-
-    /// <summary>La dirección fiscal que se guarda junto al cliente: el código postal es el dato que el CFDI 4.0 exige; el resto es opcional.</summary>
-    private static JsonObject DireccionFiscal(JsonObject cuerpo, string codigoCliente)
-    {
-        var d = Campos(cuerpo, CamposDireccion);
-        d["codigoCliente"] = codigoCliente;
-        d["tipo"] = "fiscal";
-        d["codigoPostal"] = Txt(cuerpo["codigoPostal"])!.Trim();
-        return d;
-    }
-
-    private static IResult ClienteConDireccion(ResultadoOrden cliente, ResultadoOrden direccion, int estado)
-    {
-        var resultado = new JsonObject();
-        if (cliente.Datos is { ValueKind: JsonValueKind.Object } cd)
-        {
-            foreach (var p in cd.EnumerateObject()) resultado[p.Name] = JsonNode.Parse(p.Value.GetRawText());
-        }
-
-        resultado["direccion"] = direccion.Datos is { } dd ? JsonNode.Parse(dd.GetRawText()) : null;
-        return Results.Json(new { tareaId = direccion.TareaId, resultado }, statusCode: estado);
-    }
-
-    /// <summary>Crea el cliente y guarda su domicilio fiscal con el código postal que viene en la misma petición.</summary>
-    private static async Task<IResult> CrearClienteAsync(Contexto c)
-    {
-        var d = c.Cuerpo!;
-        var errores = Requeridos(d, ("codigo", "Codigo"), ("razonSocial", "Razon social"), ("rfc", "Rfc"), ("codigoPostal", "Codigo postal"));
-        if (Txt(d["codigoPostal"])?.Trim() is { Length: > 0 } cp && !CodigoPostalValido(cp)) errores.Add("Codigo postal debe tener 5 digitos");
-        if (errores.Count > 0) return Errores.Validacion(errores);
-
-        var codigo = Txt(d["codigo"])!.Trim();
-        var cliente = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.ClienteCrear,
-            Campos(d, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "email", "regimenFiscal", "usoCfdi"), c.Llave is null ? null : c.Llave + ":cliente", c.Ct);
-        if (!cliente.Ok) return Responder(c, cliente, 201);
-
-        var direccion = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DireccionCrear, DireccionFiscal(d, codigo), c.Llave is null ? null : c.Llave + ":direccion", c.Ct);
-        if (!direccion.Ok)
-        {
-            return direccion.EnCurso
-                ? Responder(c, direccion, 201)
-                : Results.Json(Errores.DeTarea(direccion.Error, direccion.CodigoSdk, direccion.TareaId) with { Mensaje = $"El cliente {codigo} se creó, pero no se pudo guardar su domicilio fiscal. Guárdelo con PATCH …/clientes/{codigo} y el código postal." }, statusCode: 422);
-        }
-
-        return ClienteConDireccion(cliente, direccion, 201);
-    }
-
-    /// <summary>Actualiza los datos del cliente y, si viene el código postal u otro dato del domicilio, también el domicilio fiscal.</summary>
-    private static async Task<IResult> ActualizarClienteAsync(Contexto c)
-    {
-        var d = c.Cuerpo!;
-        var codigo = c.Ruta("codigo");
-        var cambios = Campos(d, "razonSocial", "rfc", "limiteCredito", "email", "regimenFiscal", "usoCfdi");
-        cambios["codigo"] = codigo;
-        var traeDomicilio = d["codigoPostal"] is not null || CamposDireccion.Any(x => d[x] is not null);
-
-        var errores = new List<string>();
-        if (cambios.Count == 1 && !traeDomicilio) errores.Add("No hay datos que actualizar");
-        if (traeDomicilio && string.IsNullOrWhiteSpace(Txt(d["codigoPostal"]))) errores.Add("Codigo postal no puede estar vacio al guardar el domicilio");
-        if (Txt(d["codigoPostal"])?.Trim() is { Length: > 0 } cp && !CodigoPostalValido(cp)) errores.Add("Codigo postal debe tener 5 digitos");
-        if (errores.Count > 0) return Errores.Validacion(errores);
-
-        ResultadoOrden? cliente = null;
-        if (cambios.Count > 1)
-        {
-            cliente = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.ClienteActualizar, cambios, c.Llave is null ? null : c.Llave + ":cliente", c.Ct);
-            if (!cliente.Ok) return Responder(c, cliente);
-        }
-
-        if (!traeDomicilio) return Responder(c, cliente!);
-        var direccion = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DireccionCrear, DireccionFiscal(d, codigo), c.Llave is null ? null : c.Llave + ":direccion", c.Ct);
-        if (!direccion.Ok) return Responder(c, direccion);
-        return cliente is null ? Responder(c, direccion) : ClienteConDireccion(cliente, direccion, 200);
-    }
-
-    // ------------------------------------------------------------------------------------------------------------------
-    // Documentos
-    // ------------------------------------------------------------------------------------------------------------------
-
-    private static async Task<IResult> CrearDocumentoAsync(Contexto c)
-    {
-        var d = c.Cuerpo!;
-        var errores = new List<string>();
-        foreach (var (campo, etiqueta) in new[] { ("concepto", "Concepto"), ("clienteCodigo", "Cliente codigo"), ("fecha", "Fecha"), ("formaPago", "Forma de pago"), ("usoCfdi", "Uso de CFDI"), ("regimenFiscal", "Regimen fiscal") })
-        {
-            if (string.IsNullOrWhiteSpace(Txt(d[campo]))) errores.Add($"{etiqueta} no puede estar vacio");
-        }
-
-        if (Txt(d["fecha"]) is { Length: > 0 } fecha && !DateOnly.TryParseExact(fecha, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) errores.Add("Fecha debe tener el formato aaaa-mm-dd");
-        if (Txt(d["formaPago"]) is { Length: > 0 } fp && !FacturacionServicio.FormasDePago.ContainsKey(fp)) errores.Add("Forma de pago no es una clave del SAT");
-        if (Txt(d["usoCfdi"]) is { Length: > 0 } uso && !FacturacionServicio.UsosCfdi.ContainsKey(uso.ToUpperInvariant())) errores.Add("Uso de CFDI no es una clave del SAT");
-        if (Txt(d["regimenFiscal"]) is { Length: > 0 } rg && !FacturacionServicio.Regimenes.ContainsKey(rg)) errores.Add("Regimen fiscal no es una clave del SAT");
-
-        var movimientos = (d["movimientos"] as JsonArray)?.OfType<JsonObject>().ToList() ?? [];
-        if (movimientos.Count == 0) errores.Add("Movimientos: se necesita al menos uno");
-        for (var i = 0; i < movimientos.Count; i++)
-        {
-            var m = movimientos[i];
-            if (string.IsNullOrWhiteSpace(Txt(m["productoCodigo"]))) errores.Add($"Movimiento {i + 1}: producto codigo no puede estar vacio");
-            if (Num(m["unidades"]) is not > 0) errores.Add($"Movimiento {i + 1}: unidades debe ser mayor que 0");
-            if (Num(m["precio"]) is not >= 0) errores.Add($"Movimiento {i + 1}: precio debe ser 0 o mayor");
-            foreach (var campo in new[] { "ivaPorcentaje", "retencionIvaPorcentaje", "iepsPorcentaje" })
+            partidas.Add(new
             {
-                if (Num(m[campo]) is < 0 or > 100) errores.Add($"Movimiento {i + 1}: {campo} debe estar entre 0 y 100");
-            }
+                productoCodigo,
+                unidades = Numero(movimiento["unidades"]),
+                precio = Numero(movimiento["precio"]),
+                almacen,
+                ivaPorcentaje = Numero(movimiento["ivaPorcentaje"]),
+                retencionIvaPorcentaje = Numero(movimiento["retencionIvaPorcentaje"]),
+                iepsPorcentaje = Numero(movimiento["iepsPorcentaje"]),
+            });
         }
 
-        if (errores.Count > 0) return Errores.Validacion(errores);
-
-        // El régimen fiscal y el uso de CFDI viven en el cliente de Comercial: se actualizan antes de crear el documento.
-        var cliente = Txt(d["clienteCodigo"])!.Trim();
-        var act = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.ClienteActualizar,
-            new { codigo = cliente, regimenFiscal = Txt(d["regimenFiscal"])!.Trim(), usoCfdi = Txt(d["usoCfdi"])!.Trim().ToUpperInvariant() }, c.Llave is null ? null : c.Llave + ":cliente", c.Ct);
-        if (!act.Ok) return Responder(c, act);
-
-        var referencia = Txt(d["referencia"]) is { Length: > 0 } rf ? rf.Trim() : ReferenciaNueva(c);
-        var crear = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DocumentoCrear, new
+        if (errores.Count > 0)
         {
-            concepto = Txt(d["concepto"])!.Trim(), serie = Txt(d["serie"]) is { Length: > 0 } s ? s.Trim() : null, clienteCodigo = cliente, referencia,
-            fecha = Txt(d["fecha"]), formaPago = Txt(d["formaPago"]), usoCfdi = Txt(d["usoCfdi"])!.Trim().ToUpperInvariant(),
-            partidas = movimientos.Select(m => new
-            {
-                productoCodigo = Txt(m["productoCodigo"])!.Trim(), unidades = Num(m["unidades"]), precio = Num(m["precio"]),
-                almacen = Txt(m["almacen"]) is { Length: > 0 } al ? al.Trim() : c.Opciones.FacturacionAlmacen,
-                ivaPorcentaje = Num(m["ivaPorcentaje"]), retencionIvaPorcentaje = Num(m["retencionIvaPorcentaje"]), iepsPorcentaje = Num(m["iepsPorcentaje"]),
-            }).ToList(),
-        }, c.Llave is null ? null : c.Llave + ":documento", c.Ct);
-        return Responder(c, crear, 201);
-    }
-
-    private static string ReferenciaNueva(Contexto c)
-    {
-        var prefijo = c.Opciones.FacturacionPrefijoReferencia;
-        var sufijo = c.Llave is null
-            ? DateTime.UtcNow.ToString("yyMMddHHmmss", CultureInfo.InvariantCulture)
-            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(c.Llave)))[..12];
-        var referencia = prefijo + sufijo;
-        return referencia.Length > 20 ? referencia[..20] : referencia;
-    }
-
-    private static bool Clave(Contexto c, out string concepto, out string? serie, out int folio, out IResult? error)
-    {
-        concepto = c.Ruta("concepto");
-        var s = c.Ruta("serie");
-        serie = s == "-" ? null : s;
-        folio = 0;
-        error = null;
-        if (!int.TryParse(c.Ruta("folio"), NumberStyles.None, CultureInfo.InvariantCulture, out folio) || folio <= 0)
-        {
-            error = Errores.Json(400, "El folio debe ser un número entero positivo.");
-            return false;
+            return Errores.Validacion(errores);
         }
 
-        return true;
+        var regimenFiscal = Texto(cuerpo["regimenFiscal"])!.Trim();
+        var usoDelCfdi = Texto(cuerpo["usoCfdi"])!.Trim().ToUpperInvariant();
+        var actualizacion = await contexto.Ejecutar(
+            Operaciones.ClienteActualizar,
+            new { codigo = clienteCodigo, regimenFiscal, usoCfdi = usoDelCfdi },
+            contexto.LlaveCon("cliente"));
+        if (!actualizacion.Ok)
+        {
+            return Responder(contexto, actualizacion);
+        }
+
+        var referencia = ReferenciaNueva(contexto);
+        if (Texto(cuerpo["referencia"]) is { Length: > 0 } referenciaPedida)
+        {
+            referencia = referenciaPedida.Trim();
+        }
+
+        string? serie = null;
+        if (Texto(cuerpo["serie"]) is { Length: > 0 } seriePedida)
+        {
+            serie = seriePedida.Trim();
+        }
+
+        var creacion = await contexto.Ejecutar(Operaciones.DocumentoCrear, new
+        {
+            concepto = Texto(cuerpo["concepto"])!.Trim(),
+            serie,
+            clienteCodigo,
+            referencia,
+            fecha = Texto(cuerpo["fecha"]),
+            formaPago = Texto(cuerpo["formaPago"]),
+            usoCfdi = usoDelCfdi,
+            partidas,
+        }, contexto.LlaveCon("documento"));
+        if (!creacion.Ok)
+        {
+            return Responder(contexto, creacion, 201);
+        }
+
+        long? id = null;
+        if (ClaveDeDocumento(creacion.Datos, Texto(cuerpo["concepto"])!.Trim()) is { } clave)
+        {
+            id = contexto.Almacen.RegistrarRecurso(contexto.Quien.ClienteId, TipoDocumento, contexto.Empresa, clave);
+        }
+
+        return Responder(contexto, creacion, 201, id);
     }
 
-    private static async Task<IResult> LeerDocumentoAsync(Contexto c)
+    private static async Task<IResult> BuscarDocumentoAsync(Contexto contexto)
     {
-        if (!Clave(c, out var concepto, out var serie, out var folio, out var error)) return error!;
-        return await Orden(c, Operaciones.DocumentoLeer, new { concepto, serie, folio });
-    }
-
-    /// <summary>Timbrado o cancelación de varios documentos en una sola orden (hasta 25). El worker los procesa de uno en uno y detalla cada resultado.</summary>
-    private static async Task<IResult> LoteAsync(Contexto c, string tipo, bool cancelar)
-    {
-        var lista = (c.Cuerpo!["documentos"] as JsonArray)?.OfType<JsonObject>().ToList() ?? [];
+        var concepto = contexto.Consulta("concepto");
+        var serie = contexto.Consulta("serie");
         var errores = new List<string>();
-        if (lista.Count is 0 or > Operaciones.MaximoDocumentosPorLote) errores.Add($"Documentos: un lote lleva entre 1 y {Operaciones.MaximoDocumentosPorLote}");
-        for (var i = 0; i < lista.Count; i++)
+        if (concepto.Length == 0)
         {
-            if (string.IsNullOrWhiteSpace(Txt(lista[i]["concepto"]))) errores.Add($"Documento {i + 1}: concepto no puede estar vacio");
-            if (Num(lista[i]["folio"]) is not > 0) errores.Add($"Documento {i + 1}: folio debe ser un número positivo");
-            if (cancelar && Txt(lista[i]["motivo"]) is not ("01" or "02" or "03" or "04")) errores.Add($"Documento {i + 1}: motivo debe ser 01, 02, 03 o 04");
+            errores.Add("Concepto no puede estar vacio");
         }
 
-        var documentos = lista.Select(d => cancelar
-            ? (object)new { concepto = Txt(d["concepto"]), serie = Txt(d["serie"]) is { Length: > 0 } s && s != "-" ? s : null, folio = Num(d["folio"]), motivo = Txt(d["motivo"]), uuidSustituto = Txt(d["uuidSustituto"]) }
-            : new { concepto = Txt(d["concepto"]), serie = Txt(d["serie"]) is { Length: > 0 } s2 && s2 != "-" ? s2 : null, folio = Num(d["folio"]) }).ToList();
-        return await Orden(c, tipo, new { documentos }, 200, errores);
+        if (!long.TryParse(contexto.Consulta("folio"), NumberStyles.None, CultureInfo.InvariantCulture, out var folio) || folio <= 0)
+        {
+            errores.Add("Folio debe ser un número entero positivo");
+        }
+
+        if (errores.Count > 0)
+        {
+            return Errores.Validacion(errores);
+        }
+
+        string? serieDelDocumento = null;
+        if (serie.Length > 0 && serie != "-")
+        {
+            serieDelDocumento = serie;
+        }
+
+        var lectura = await contexto.Ejecutar(Operaciones.DocumentoLeer, new { concepto, serie = serieDelDocumento, folio }, null);
+        if (!lectura.Ok)
+        {
+            return Responder(contexto, lectura);
+        }
+
+        var id = contexto.Almacen.RegistrarRecurso(contexto.Quien.ClienteId, TipoDocumento, contexto.Empresa, ClaveDeDocumento(concepto, serieDelDocumento, folio));
+        return Responder(contexto, lectura, 200, id);
     }
 
-    private static async Task<IResult> TimbrarAsync(Contexto c)
+    private static Task<IResult> LeerDocumentoAsync(Contexto contexto)
     {
-        if (!Clave(c, out var concepto, out var serie, out var folio, out var error)) return error!;
-        var emitir = await c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DocumentoEmitir, new { concepto, serie, folio }, c.Llave, c.Ct);
-        if (!emitir.Ok) return Responder(c, emitir);
+        var documento = Documento(contexto.Recurso!);
+        return Orden(contexto, Operaciones.DocumentoLeer, new { concepto = documento.Concepto, serie = documento.Serie, folio = documento.Folio });
+    }
 
-        var uuid = emitir.Datos is { } d && d.TryGetProperty("uuid", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
+    private static async Task<IResult> TimbrarAsync(Contexto contexto)
+    {
+        var documento = Documento(contexto.Recurso!);
+        var emision = await contexto.Ejecutar(
+            Operaciones.DocumentoEmitir,
+            new { concepto = documento.Concepto, serie = documento.Serie, folio = documento.Folio },
+            contexto.Llave);
+        if (!emision.Ok)
+        {
+            return Responder(contexto, emision, 200, contexto.Recurso!.Id);
+        }
 
-        // El XML timbrado va en texto plano en su propio campo. Si Comercial no lo entrega a tiempo, el timbrado sigue siendo
-        // válido y el XML se pide después con GET …/xml.
+        string? uuid = null;
+        if (emision.Datos is { } datos && datos.TryGetProperty("uuid", out var valorUuid) && valorUuid.ValueKind == JsonValueKind.String)
+        {
+            uuid = valorUuid.GetString();
+        }
+
         string? xml = null;
         try
         {
-            var arch = await Archivo(c, concepto, serie, folio, "xml");
-            if (arch.Ok && ContenidoBase64(arch, "xml") is { } b64) xml = FacturacionServicio.DecodificarXml(b64);
+            var archivo = await Archivo(contexto, documento, "xml");
+            if (archivo.Ok && ContenidoBase64(archivo, "xml") is { } base64)
+            {
+                xml = FacturacionServicio.DecodificarXml(base64);
+            }
         }
-        catch (Exception) { /* el XML se puede pedir después */ }
+        catch (Exception)
+        {
+            xml = null;
+        }
 
-        return Results.Json(new { tareaId = emitir.TareaId, concepto, serie, folio, uuid, estado = "timbrada", xml, resultado = emitir.Datos }, statusCode: 200);
+        return Results.Json(new
+        {
+            id = contexto.Recurso!.Id,
+            tareaId = emision.TareaId,
+            documento.Concepto,
+            documento.Serie,
+            documento.Folio,
+            uuid,
+            estado = "timbrada",
+            xml,
+            resultado = emision.Datos,
+        });
     }
 
-    private static Task<ResultadoOrden> Archivo(Contexto c, string concepto, string? serie, int folio, string formato) =>
-        c.Ejecutor.EjecutarAsync(c.Quien.ClienteId, c.Empresa, Operaciones.DocumentoObtenerArchivo, new { concepto, serie, folio, formato, incluirContenido = true }, null, c.Ct);
-
-    private static string? ContenidoBase64(ResultadoOrden r, string formato)
+    private static Task<IResult> CancelarAsync(Contexto contexto)
     {
-        if (r.Datos is not { } d || !d.TryGetProperty("archivos", out var a) || a.ValueKind != JsonValueKind.Array) return null;
-        foreach (var x in a.EnumerateArray())
+        var documento = Documento(contexto.Recurso!);
+        var cuerpo = contexto.Cuerpo!;
+        var errores = new List<string>();
+        var motivo = ValidarCancelacion(cuerpo, errores, string.Empty);
+        return Orden(contexto, Operaciones.DocumentoCancelar, new
         {
-            if (x.TryGetProperty("tipo", out var t) && string.Equals(t.GetString(), formato, StringComparison.OrdinalIgnoreCase)
-                && x.TryGetProperty("base64", out var b) && b.ValueKind == JsonValueKind.String) return b.GetString();
+            concepto = documento.Concepto,
+            serie = documento.Serie,
+            folio = documento.Folio,
+            motivo,
+            uuidSustituto = UuidSustituto(cuerpo),
+        }, 200, errores);
+    }
+
+    private static async Task<IResult> ArchivoAsync(Contexto contexto, string formato)
+    {
+        var documento = Documento(contexto.Recurso!);
+        var archivo = await Archivo(contexto, documento, formato);
+        if (!archivo.Ok)
+        {
+            return Responder(contexto, archivo);
+        }
+
+        var base64 = ContenidoBase64(archivo, formato);
+        if (base64 is null)
+        {
+            return Errores.Json(422, $"Comercial no entregó el archivo {formato.ToUpperInvariant()} (el documento debe estar timbrado).", codigo: CodigosError.OperacionFallida);
+        }
+
+        if (formato == "xml")
+        {
+            return Results.Content(FacturacionServicio.DecodificarXml(base64) ?? string.Empty, "application/xml; charset=utf-8");
+        }
+
+        return Results.File(Convert.FromBase64String(base64), "application/pdf", $"{documento.Serie}{documento.Folio}.pdf");
+    }
+
+    private static async Task<IResult> VariosAsync(Contexto contexto, bool cancelar)
+    {
+        var elementos = contexto.Cuerpo!["documentos"] as JsonArray ?? [];
+        var errores = new List<string>();
+        var maximo = Math.Max(1, contexto.Opciones.MaximoDocumentosPorLote);
+        if (elementos.Count == 0 || elementos.Count > maximo)
+        {
+            errores.Add($"Documentos: se envían entre 1 y {maximo}");
+        }
+
+        var pedidos = new List<(RecursoAcusa Recurso, string? Motivo, string? UuidSustituto)>();
+        for (var indice = 0; indice < elementos.Count; indice++)
+        {
+            var elemento = elementos[indice];
+            var datos = new JsonObject();
+            var idTexto = Texto(elemento);
+            if (elemento is JsonObject objeto)
+            {
+                datos = objeto;
+                idTexto = Texto(objeto["id"]);
+            }
+
+            var etiqueta = $"Documento {indice + 1}";
+            if (!long.TryParse(idTexto, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                || contexto.Almacen.BuscarRecurso(contexto.Quien.ClienteId, TipoDocumento, id) is not { } recurso
+                || !contexto.Almacen.EmpresaDelCliente(contexto.Quien.ClienteId, recurso.Empresa))
+            {
+                errores.Add($"{etiqueta}: no existe el documento {idTexto}");
+                continue;
+            }
+
+            string? motivo = null;
+            if (cancelar)
+            {
+                motivo = ValidarCancelacion(datos, errores, etiqueta + ": ");
+            }
+
+            pedidos.Add((recurso, motivo, UuidSustituto(datos)));
+        }
+
+        if (errores.Count > 0)
+        {
+            return Errores.Validacion(errores);
+        }
+
+        var tareas = new List<object>();
+        foreach (var pedido in pedidos)
+        {
+            var documento = Documento(pedido.Recurso);
+            var tipo = Operaciones.DocumentoEmitir;
+            object payload = new { concepto = documento.Concepto, serie = documento.Serie, folio = documento.Folio };
+            if (cancelar)
+            {
+                tipo = Operaciones.DocumentoCancelar;
+                payload = new { concepto = documento.Concepto, serie = documento.Serie, folio = documento.Folio, motivo = pedido.Motivo, uuidSustituto = pedido.UuidSustituto };
+            }
+
+            var encolada = await contexto.Ejecutor.EncolarAsync(
+                contexto.Quien.ClienteId, pedido.Recurso.Empresa, tipo, payload, contexto.LlaveCon(pedido.Recurso.Id.ToString(CultureInfo.InvariantCulture)), contexto.Cancelacion);
+            if (!encolada.EnCurso)
+            {
+                tareas.Add(new { documentoId = pedido.Recurso.Id, tareaId = encolada.TareaId, error = encolada.Error });
+                continue;
+            }
+
+            tareas.Add(new { documentoId = pedido.Recurso.Id, tareaId = encolada.TareaId, error = (string?)null });
+        }
+
+        contexto.Http.Response.Headers.Location = "/api/sdk/tasks/pendientes";
+        return Results.Json(new { estado = "EnProceso", mensaje = "Los documentos se procesan en segundo plano; consulte cada tarea o las pendientes.", tareas }, statusCode: 202);
+    }
+
+    private static string? ValidarCancelacion(JsonObject datos, List<string> errores, string prefijo)
+    {
+        var motivo = Texto(datos["motivo"])?.Trim();
+        if (motivo is not ("01" or "02" or "03" or "04"))
+        {
+            errores.Add($"{prefijo}Motivo debe ser 01, 02, 03 o 04");
+        }
+
+        if (motivo == "01" && UuidSustituto(datos) is null)
+        {
+            errores.Add($"{prefijo}El motivo 01 requiere uuidSustituto");
+        }
+
+        return motivo;
+    }
+
+    private static string? UuidSustituto(JsonObject datos)
+    {
+        var sustituto = Texto(datos["uuidSustituto"])?.Trim();
+        if (string.IsNullOrWhiteSpace(sustituto))
+        {
+            return null;
+        }
+
+        return sustituto;
+    }
+
+    private static string? ResolverCodigo(Contexto contexto, JsonObject datos, string campoId, string campoCodigo, string tipo, string etiqueta, List<string> errores)
+    {
+        var idTexto = Texto(datos[campoId]);
+        if (!string.IsNullOrWhiteSpace(idTexto))
+        {
+            if (long.TryParse(idTexto, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                && contexto.Almacen.BuscarRecurso(contexto.Quien.ClienteId, tipo, id) is { } recurso
+                && string.Equals(recurso.Empresa, contexto.Empresa, StringComparison.OrdinalIgnoreCase))
+            {
+                return recurso.Clave;
+            }
+
+            errores.Add($"{etiqueta}: no existe el {tipo} {idTexto} en la empresa {contexto.Empresa}");
+            return null;
+        }
+
+        var codigo = Texto(datos[campoCodigo])?.Trim();
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            errores.Add($"{etiqueta}: indique {campoId} o {campoCodigo}");
+            return null;
+        }
+
+        return codigo;
+    }
+
+    private static (string Concepto, string? Serie, long Folio) Documento(RecursoAcusa recurso)
+    {
+        var partes = recurso.Clave.Split('|');
+        string? serie = null;
+        if (partes[1].Length > 0)
+        {
+            serie = partes[1];
+        }
+
+        return (partes[0], serie, long.Parse(partes[2], CultureInfo.InvariantCulture));
+    }
+
+    public static string ClaveDeDocumento(string concepto, string? serie, long folio) =>
+        $"{concepto}|{serie ?? string.Empty}|{folio.ToString(CultureInfo.InvariantCulture)}";
+
+    private static string? ClaveDeDocumento(JsonElement? datos, string concepto)
+    {
+        if (datos is not { ValueKind: JsonValueKind.Object } documento)
+        {
+            return null;
+        }
+
+        if (!Propiedad(documento, "folio", out var valorFolio) || !valorFolio.TryGetInt64(out var folio))
+        {
+            return null;
+        }
+
+        string? serie = null;
+        if (Propiedad(documento, "serie", out var valorSerie) && valorSerie.ValueKind == JsonValueKind.String)
+        {
+            serie = valorSerie.GetString();
+        }
+
+        if (Propiedad(documento, "concepto", out var valorConcepto) && valorConcepto.ValueKind == JsonValueKind.String && valorConcepto.GetString() is { Length: > 0 } conceptoDevuelto)
+        {
+            concepto = conceptoDevuelto;
+        }
+
+        return ClaveDeDocumento(concepto, serie, folio);
+    }
+
+    private static bool Propiedad(JsonElement objeto, string nombre, out JsonElement valor)
+    {
+        foreach (var propiedad in objeto.EnumerateObject())
+        {
+            if (string.Equals(propiedad.Name, nombre, StringComparison.OrdinalIgnoreCase))
+            {
+                valor = propiedad.Value;
+                return true;
+            }
+        }
+
+        valor = default;
+        return false;
+    }
+
+    private static Task<ResultadoOrden> Archivo(Contexto contexto, (string Concepto, string? Serie, long Folio) documento, string formato) =>
+        contexto.Ejecutar(
+            Operaciones.DocumentoObtenerArchivo,
+            new { concepto = documento.Concepto, serie = documento.Serie, folio = documento.Folio, formato, incluirContenido = true },
+            null);
+
+    private static string? ContenidoBase64(ResultadoOrden resultado, string formato)
+    {
+        if (resultado.Datos is not { } datos || !datos.TryGetProperty("archivos", out var archivos) || archivos.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var archivo in archivos.EnumerateArray())
+        {
+            if (archivo.TryGetProperty("tipo", out var tipo) && string.Equals(tipo.GetString(), formato, StringComparison.OrdinalIgnoreCase)
+                && archivo.TryGetProperty("base64", out var contenido) && contenido.ValueKind == JsonValueKind.String)
+            {
+                return contenido.GetString();
+            }
         }
 
         return null;
     }
 
-    private static async Task<IResult> ArchivoAsync(Contexto c, string formato)
+    private static JsonObject ClienteConDireccion(ResultadoOrden cliente, ResultadoOrden direccion)
     {
-        if (!Clave(c, out var concepto, out var serie, out var folio, out var error)) return error!;
-        var r = await Archivo(c, concepto, serie, folio, formato);
-        if (!r.Ok) return Responder(c, r);
-        var b64 = ContenidoBase64(r, formato);
-        if (b64 is null) return Errores.Json(422, $"Comercial no entregó el archivo {formato.ToUpperInvariant()} (el documento debe estar timbrado).", codigo: CodigosError.OperacionFallida);
-        var nombre = $"{serie}{folio}.{formato}";
-        return formato == "xml"
-            ? Results.Content(FacturacionServicio.DecodificarXml(b64) ?? string.Empty, "application/xml; charset=utf-8")
-            : Results.File(Convert.FromBase64String(b64), "application/pdf", nombre);
-    }
-
-    private static async Task<IResult> CancelarAsync(Contexto c)
-    {
-        if (!Clave(c, out var concepto, out var serie, out var folio, out var error)) return error!;
-        var motivo = Txt(c.Cuerpo!["motivo"])?.Trim();
-        var sustituto = Txt(c.Cuerpo!["uuidSustituto"])?.Trim();
-        var errores = new List<string>();
-        if (motivo is not ("01" or "02" or "03" or "04")) errores.Add("Motivo debe ser 01, 02, 03 o 04");
-        if (motivo == "01" && string.IsNullOrWhiteSpace(sustituto)) errores.Add("El motivo 01 requiere uuidSustituto");
-        return await Orden(c, Operaciones.DocumentoCancelar, new { concepto, serie, folio, motivo, uuidSustituto = string.IsNullOrWhiteSpace(sustituto) ? null : sustituto }, 200, errores);
-    }
-
-    // ------------------------------------------------------------------------------------------------------------------
-    // Utilidades
-    // ------------------------------------------------------------------------------------------------------------------
-
-    private static string? Txt(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : n?.ToString();
-
-    private static decimal? Num(JsonNode? n)
-    {
-        if (n is not JsonValue v) return null;
-        if (v.TryGetValue<decimal>(out var d)) return d;
-        return v.TryGetValue<string>(out var s) && decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var p) ? p : null;
-    }
-
-    /// <summary>Copia solo los campos permitidos del cuerpo: lo que no esté en la lista no llega al worker.</summary>
-    private static JsonObject Campos(JsonObject cuerpo, params string[] permitidos)
-    {
-        var r = new JsonObject();
-        foreach (var k in permitidos)
+        var resultado = new JsonObject();
+        if (cliente.Datos is { ValueKind: JsonValueKind.Object } datosCliente)
         {
-            if (cuerpo[k] is { } v) r[k] = v.DeepClone();
+            foreach (var propiedad in datosCliente.EnumerateObject())
+            {
+                resultado[propiedad.Name] = JsonNode.Parse(propiedad.Value.GetRawText());
+            }
         }
 
-        return r;
+        if (direccion.Datos is { } datosDireccion)
+        {
+            resultado["direccion"] = JsonNode.Parse(datosDireccion.GetRawText());
+        }
+
+        return resultado;
+    }
+
+    private static JsonObject DatosDeDireccion(JsonObject cuerpo, string codigoCliente, int tipo)
+    {
+        var direccion = Campos(cuerpo, CamposDireccion);
+        direccion["codigoCliente"] = codigoCliente;
+        direccion["tipo"] = tipo;
+        direccion["codigoPostal"] = Texto(cuerpo["codigoPostal"])!.Trim();
+        return direccion;
+    }
+
+    private static int LeerTipoDireccion(JsonObject cuerpo, List<string> errores)
+    {
+        if (cuerpo["tipo"] is null)
+        {
+            return DireccionFiscal;
+        }
+
+        if (!TipoDireccionValido(Texto(cuerpo["tipo"]), out var tipo))
+        {
+            errores.Add("Tipo de dirección debe ser 0 (fiscal) o 1 (envío)");
+        }
+
+        return tipo;
+    }
+
+    private static bool TipoDireccionValido(string? texto, out int tipo)
+    {
+        if (int.TryParse(texto, NumberStyles.None, CultureInfo.InvariantCulture, out tipo) && tipo is DireccionFiscal or DireccionEnvio)
+        {
+            return true;
+        }
+
+        tipo = DireccionFiscal;
+        return false;
+    }
+
+    private static bool EsDireccionInexistente(ResultadoOrden resultado) =>
+        !resultado.Ok && !resultado.EnCurso && resultado.CodigoSdk is null
+        && resultado.Error is { } error && error.Contains("no tiene dirección", StringComparison.OrdinalIgnoreCase);
+
+    private static void ValidarCodigoPostal(JsonObject cuerpo, List<string> errores)
+    {
+        if (Texto(cuerpo["codigoPostal"])?.Trim() is { Length: > 0 } codigoPostal && !(codigoPostal.Length == 5 && codigoPostal.All(char.IsAsciiDigit)))
+        {
+            errores.Add("Codigo postal debe tener 5 digitos");
+        }
+    }
+
+    private static string ReferenciaNueva(Contexto contexto)
+    {
+        var sufijo = DateTime.UtcNow.ToString("yyMMddHHmmss", CultureInfo.InvariantCulture);
+        if (contexto.Llave is not null)
+        {
+            sufijo = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contexto.Llave)))[..12];
+        }
+
+        var referencia = contexto.Opciones.FacturacionPrefijoReferencia + sufijo;
+        if (referencia.Length > 20)
+        {
+            return referencia[..20];
+        }
+
+        return referencia;
+    }
+
+    private static string? Texto(JsonNode? nodo)
+    {
+        if (nodo is JsonValue valor && valor.TryGetValue<string>(out var texto))
+        {
+            return texto;
+        }
+
+        return nodo?.ToString();
+    }
+
+    private static decimal? Numero(JsonNode? nodo)
+    {
+        if (nodo is not JsonValue valor)
+        {
+            return null;
+        }
+
+        if (valor.TryGetValue<decimal>(out var numero))
+        {
+            return numero;
+        }
+
+        if (valor.TryGetValue<string>(out var texto) && decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var convertido))
+        {
+            return convertido;
+        }
+
+        return null;
+    }
+
+    private static JsonObject Campos(JsonObject cuerpo, params string[] permitidos)
+    {
+        var copia = new JsonObject();
+        foreach (var campo in permitidos)
+        {
+            if (cuerpo[campo] is { } valor)
+            {
+                copia[campo] = valor.DeepClone();
+            }
+        }
+
+        return copia;
     }
 
     private static List<string> Requeridos(JsonObject cuerpo, params (string Campo, string Etiqueta)[] campos) =>
-        campos.Where(x => string.IsNullOrWhiteSpace(Txt(cuerpo[x.Campo]))).Select(x => $"{x.Etiqueta} no puede estar vacio").ToList();
+        campos.Where(campo => string.IsNullOrWhiteSpace(Texto(cuerpo[campo.Campo]))).Select(campo => $"{campo.Etiqueta} no puede estar vacio").ToList();
 }

@@ -9,4 +9,8 @@ public static class PeticionActual
     private static readonly AsyncLocal<string?> Valor = new();
 
     public static string? Texto { get => Valor.Value; set => Valor.Value = value; }
+
+    private static readonly AsyncLocal<int?> Espera = new();
+
+    public static int? EsperaSegundos { get => Espera.Value; set => Espera.Value = value; }
 }

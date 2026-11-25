@@ -54,6 +54,12 @@ public sealed class Almacen
 
         // Una llave de idempotencia identifica una orden de un cliente: la base misma impide registrarla dos veces.
         Ejecutar("CREATE UNIQUE INDEX IF NOT EXISTS ux_tareas_llave ON tareas (cliente_id, llave) WHERE llave IS NOT NULL");
+        Ejecutar("""
+            CREATE TABLE IF NOT EXISTS recursos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, cliente_id TEXT NOT NULL, tipo TEXT NOT NULL, empresa TEXT NOT NULL COLLATE NOCASE,
+                clave TEXT NOT NULL, creado TEXT NOT NULL);
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_recursos ON recursos (cliente_id, tipo, empresa, clave);
+            """);
     }
 
     // ---- Versiones del worker --------------------------------------------------------------
@@ -369,6 +375,49 @@ public sealed class Almacen
         return r.Read() ? LeerTarea(r) : null;
     }
 
+    public long RegistrarRecurso(string clienteId, string tipo, string empresa, string clave)
+    {
+        Ejecutar(
+            "INSERT OR IGNORE INTO recursos (cliente_id, tipo, empresa, clave, creado) VALUES ($cliente, $tipo, $empresa, $clave, $creado)",
+            ("$cliente", clienteId), ("$tipo", tipo), ("$empresa", empresa), ("$clave", clave), ("$creado", Ahora()));
+        return Escalar(
+            "SELECT id FROM recursos WHERE cliente_id=$cliente AND tipo=$tipo AND empresa=$empresa AND clave=$clave",
+            ("$cliente", clienteId), ("$tipo", tipo), ("$empresa", empresa), ("$clave", clave));
+    }
+
+    public RecursoAcusa? BuscarRecurso(string clienteId, string tipo, long id)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
+            "SELECT id, tipo, empresa, clave FROM recursos WHERE id=$id AND cliente_id=$cliente AND tipo=$tipo",
+            ("$id", id), ("$cliente", clienteId), ("$tipo", tipo));
+        using var lector = comando.ExecuteReader();
+        if (!lector.Read())
+        {
+            return null;
+        }
+
+        return new RecursoAcusa(lector.GetInt64(0), lector.GetString(1), lector.GetString(2), lector.GetString(3));
+    }
+
+    public IReadOnlyList<TareaDto> ListarTareasPendientes(string clienteId, int limite)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
+            SeleccionTarea + " WHERE cliente_id=$c AND estado IN ($pendiente, $proceso) ORDER BY creada, rowid LIMIT $l",
+            ("$c", clienteId), ("$pendiente", (int)EstadoTarea.Pendiente), ("$proceso", (int)EstadoTarea.EnProceso), ("$l", Math.Clamp(limite, 1, 1000)));
+        using var lector = comando.ExecuteReader();
+        var tareas = new List<TareaDto>();
+        while (lector.Read())
+        {
+            tareas.Add(LeerTarea(lector));
+        }
+
+        return tareas;
+    }
+
     public IReadOnlyList<TareaDto> ListarTareas(string clienteId, EstadoTarea? estado, int limite)
     {
         using var conexion = Abrir();
@@ -503,6 +552,8 @@ public sealed record LlaveDto(string Id, string? Nombre, string Rol, string? Pre
 /// <summary>Resultado de encolar con llave de idempotencia.</summary>
 /// <param name="Repetida">La llave ya existía: no se creó una tarea nueva.</param>
 /// <param name="Conflicto">La llave ya se usó con una orden distinta.</param>
+public sealed record RecursoAcusa(long Id, string Tipo, string Empresa, string Clave);
+
 public sealed record ResultadoEncolar(string Id, EstadoTarea Estado, bool Repetida, bool Conflicto);
 
 public sealed record UsuarioRegistro(string Id, string ClienteId, string Email, string Nombre, string Clave, string ClienteNombre);

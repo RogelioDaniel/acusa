@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Acusa.Contrato;
 using Acusa.Orquestador;
 
@@ -285,6 +285,16 @@ api.MapGet("/tasks/{id}", async Task<IResult> (string id, HttpContext http, Alma
     }
 
     return a.ObtenerTarea(quien.ClienteId, id) is { } tarea ? Results.Ok(tarea) : Errores.Json(404, "No existe la tarea.");
+});
+
+api.MapGet("/tasks/pendientes", (HttpContext http, Almacen almacen, Seguridad seguridad, int? limite) =>
+{
+    if (Autenticar(http, almacen, seguridad, Roles.Api, Roles.Portal) is not { } quien)
+    {
+        return Errores.NoAutorizado();
+    }
+
+    return Results.Ok(almacen.ListarTareasPendientes(quien.ClienteId, limite ?? 200));
 });
 
 api.MapGet("/tasks", (HttpContext http, Almacen a, Seguridad seguridad, EstadoTarea? estado, int? limite) =>
@@ -646,7 +656,11 @@ public sealed class Opciones
     // ---- Rutas de facturación ----------------------------------------------------------
 
     /// <summary>Segundos que cada paso de las rutas de facturación espera al worker antes de responder «en curso».</summary>
-    public int FacturacionEsperaSegundos { get; set; } = 60;
+    public int FacturacionEsperaSegundos { get; set; } = 30;
+
+    public int FacturacionEsperaMaximaSegundos { get; set; } = 30;
+
+    public int MaximoDocumentosPorLote { get; set; } = 500;
 
     /// <summary>Empresa de CONTPAQi donde se crean clientes y productos cuando no se indica una emisora. Vacía: la primera registrada.</summary>
     public string FacturacionEmpresa { get; set; } = string.Empty;

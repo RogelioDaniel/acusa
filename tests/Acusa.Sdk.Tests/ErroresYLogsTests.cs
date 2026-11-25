@@ -171,7 +171,7 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task ObtenerCliente_ConIdDeCorrelacionValido_LoConserva()
     {
-        var peticion = Peticion(HttpMethod.Get, "/api/empresas/NOEXISTE/clientes/X");
+        var peticion = Peticion(HttpMethod.Get, "/api/empresas/NOEXISTE/clientes?codigo=X");
         peticion.Headers.Add(Correlacion.Cabecera, "sistema-cliente-42");
         var respuesta = await _http.SendAsync(peticion);
         var (error, _) = await LeerErrorAsync(respuesta);
@@ -193,7 +193,7 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task ObtenerCliente_EmpresaAjena_Responde404()
     {
-        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/empresas/AJENA/clientes/X"));
+        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/empresas/AJENA/clientes?codigo=X"));
         var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);

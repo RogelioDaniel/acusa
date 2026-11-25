@@ -16,6 +16,12 @@ public sealed class FacturacionRutasTests : IDisposable
         public Dictionary<string, Func<int, ResultadoOrden>> Respuestas { get; } = [];
         private int _n;
 
+        public Task<ResultadoOrden> EncolarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct)
+        {
+            Llamadas.Add(new Llamada(empresa, tipo, JsonSerializer.SerializeToElement(payload), llave));
+            return Task.FromResult(new ResultadoOrden(false, null, null, null, true, $"t{Llamadas.Count}"));
+        }
+
         public Task<ResultadoOrden> EjecutarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct)
         {
             var json = JsonSerializer.SerializeToElement(payload);

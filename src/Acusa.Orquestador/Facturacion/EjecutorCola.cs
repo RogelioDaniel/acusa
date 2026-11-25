@@ -12,22 +12,49 @@ public sealed record ResultadoOrden(bool Ok, JsonElement? Datos, string? Error, 
 public interface IEjecutorOrdenes
 {
     Task<ResultadoOrden> EjecutarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct);
+
+    Task<ResultadoOrden> EncolarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct);
 }
 
 /// <summary>Ejecuta las órdenes por la cola de Central: las encola, avisa al worker y espera el resultado.</summary>
 public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opciones opciones) : IEjecutorOrdenes
 {
+    public Task<ResultadoOrden> EncolarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct)
+    {
+        var encolada = Encolar(clienteId, empresa, tipo, payload, llave);
+        return Task.FromResult(encolada.Rechazo ?? new ResultadoOrden(false, null, null, null, true, encolada.TareaId));
+    }
+
     public async Task<ResultadoOrden> EjecutarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct)
+    {
+        var encolada = Encolar(clienteId, empresa, tipo, payload, llave);
+        if (encolada.Rechazo is not null)
+        {
+            return encolada.Rechazo;
+        }
+
+        var id = encolada.TareaId!;
+        var segundos = Math.Clamp(PeticionActual.EsperaSegundos ?? opciones.FacturacionEsperaSegundos, 1, Math.Max(1, opciones.FacturacionEsperaMaximaSegundos));
+        var tarea = await notificador.EsperarResultadoAsync(almacen, clienteId, id, TimeSpan.FromSeconds(segundos), ct);
+        return tarea?.Estado switch
+        {
+            EstadoTarea.Completada => new ResultadoOrden(true, tarea.Resultado, null, null, false, id),
+            EstadoTarea.Fallida => new ResultadoOrden(false, null, tarea.Error ?? "La operación no se completó.", tarea.CodigoSdk, false, id),
+            _ => new ResultadoOrden(false, null, "El worker no respondió a tiempo; la tarea sigue en la cola.", null, true, id),
+        };
+    }
+
+    private (string? TareaId, ResultadoOrden? Rechazo) Encolar(string clienteId, string empresa, string tipo, object payload, string? llave)
     {
         if (!almacen.EmpresaDelCliente(clienteId, empresa))
         {
-            return new ResultadoOrden(false, null, $"La empresa '{empresa}' no está registrada para este cliente.", null, false, null);
+            return (null, new ResultadoOrden(false, null, $"La empresa '{empresa}' no está registrada para este cliente.", null, false, null));
         }
 
         var json = JsonSerializer.Serialize(payload);
         if (json.Length > opciones.MaxPayloadBytes)
         {
-            return new ResultadoOrden(false, null, $"La orden excede {opciones.MaxPayloadBytes} caracteres.", null, false, null);
+            return (null, new ResultadoOrden(false, null, $"La orden excede {opciones.MaxPayloadBytes} caracteres.", null, false, null));
         }
 
         string id;
@@ -36,7 +63,7 @@ public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opcio
             var r = almacen.EncolarIdempotente(clienteId, empresa, tipo, json, llave, PeticionActual.Texto);
             if (r.Conflicto)
             {
-                return new ResultadoOrden(false, null, "La orden cambió respecto a un intento anterior con la misma llave.", null, false, r.Id);
+                return (null, new ResultadoOrden(false, null, "La orden cambió respecto a un intento anterior con la misma llave.", null, false, r.Id));
             }
 
             id = r.Id;
@@ -51,12 +78,6 @@ public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opcio
             notificador.TareaEncolada();
         }
 
-        var tarea = await notificador.EsperarResultadoAsync(almacen, clienteId, id, TimeSpan.FromSeconds(Math.Max(1, opciones.FacturacionEsperaSegundos)), ct);
-        return tarea?.Estado switch
-        {
-            EstadoTarea.Completada => new ResultadoOrden(true, tarea.Resultado, null, null, false, id),
-            EstadoTarea.Fallida => new ResultadoOrden(false, null, tarea.Error ?? "La operación no se completó.", tarea.CodigoSdk, false, id),
-            _ => new ResultadoOrden(false, null, "El worker no respondió a tiempo; la tarea sigue en la cola.", null, true, id),
-        };
+        return (id, null);
     }
 }
