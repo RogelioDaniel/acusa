@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace Acusa.Contrato;
 
@@ -70,7 +70,7 @@ public static class Operaciones
 
 /// <summary>Cuerpo de <c>POST /api/sdk/execute</c>.</summary>
 /// <param name="TipoProceso">Operación, por ejemplo <c>documento.crear</c>.</param>
-/// <param name="Empresa">Nombre de la empresa de CONTPAQi (carpeta o base), por ejemplo <c>adEMPRESA_DE_PRUEBA</c>.</param>
+/// <param name="Empresa">Nombre de la empresa de CONTPAQi (carpeta o base), por ejemplo <c>adMIEMPRESA</c>.</param>
 /// <param name="DbName">Alias de <paramref name="Empresa"/>: se conserva por compatibilidad con integraciones existentes.</param>
 /// <param name="Payload">Datos de la operación.</param>
 public sealed record SolicitudEjecutar(string TipoProceso, string? Empresa, JsonElement? Payload, string? DbName = null, string? LlaveIdempotencia = null);
@@ -120,15 +120,15 @@ public static class CatalogoOperaciones
 {
     public static readonly IReadOnlyList<OperacionInfo> Todas =
     [
-        new(Operaciones.ClienteCrear, "Clientes", "Da de alta un cliente.", """{"codigo":"PRUEBADEMO01","razonSocial":"PRUEBA CLIENTE DEMO"}"""),
-        new(Operaciones.ClienteLeer, "Clientes", "Consulta un cliente por código.", """{"codigo":"PRUEBADEMO01"}"""),
-        new(Operaciones.ClienteActualizar, "Clientes", "Cambia datos de un cliente que ya existe: razón social, RFC, régimen fiscal, uso de CFDI, correo o límite de crédito. Un campo ausente no se toca.", """{"codigo":"PRUEBADEMO01","rfc":"XAXX010101000","limiteCredito":50000}"""),
-        new(Operaciones.ProductoCrear, "Productos", "Da de alta un producto.","""{"codigo":"PRUEBAPR01","nombre":"PRUEBA PRODUCTO","unidadBase":"Pieza","precio1":10,"claveSat":"01010101"}"""),
-        new(Operaciones.ProductoLeer, "Productos", "Consulta un producto por código.", """{"codigo":"PRUEBAPR01"}"""),
-        new(Operaciones.DocumentoCrear, "Documentos", "Crea un documento sin timbrar. Devuelve concepto, serie y folio.", """{"concepto":"5","serie":"PRUEBA","clienteCodigo":"PRUEBADEMO01","referencia":"PRUEBA","partidas":[{"productoCodigo":"PRUEBAPR01","unidades":1,"precio":10,"almacen":"1"}]}"""),
-        new(Operaciones.DocumentoEmitir, "Documentos", "Timbra un documento de prueba (CFDI). La contraseña del certificado vive en el worker, no se envía.", """{"concepto":"5","serie":"PRUEBA","folio":1}"""),
-        new(Operaciones.DocumentoObtenerArchivo, "Documentos", "Entrega el XML y/o el PDF de un documento timbrado (formato: xml, pdf o ambos). Con incluirContenido devuelve el archivo en base64.", """{"concepto":"5","serie":"PRUEBA","folio":1,"formato":"ambos","incluirContenido":true}"""),
-        new(Operaciones.DocumentoCancelar, "Documentos", "Cancela un documento de prueba. Si está timbrado exige el motivo del SAT (01 a 04); el 01 pide uuidSustituto.", """{"concepto":"5","serie":"PRUEBA","folio":1,"motivo":"02"}"""),
+        new(Operaciones.ClienteCrear, "Clientes", "Da de alta un cliente.", """{"codigo":"CLI0001","razonSocial":"CLIENTE DEMO SA DE CV"}"""),
+        new(Operaciones.ClienteLeer, "Clientes", "Consulta un cliente por código.", """{"codigo":"CLI0001"}"""),
+        new(Operaciones.ClienteActualizar, "Clientes", "Cambia datos de un cliente que ya existe: razón social, RFC, régimen fiscal, uso de CFDI, correo o límite de crédito. Un campo ausente no se toca.", """{"codigo":"CLI0001","rfc":"XAXX010101000","limiteCredito":50000}"""),
+        new(Operaciones.ProductoCrear, "Productos", "Da de alta un producto.","""{"codigo":"SERV0001","nombre":"SERVICIO DEMO","unidadBase":"Pieza","precio1":10,"claveSat":"01010101"}"""),
+        new(Operaciones.ProductoLeer, "Productos", "Consulta un producto por código.", """{"codigo":"SERV0001"}"""),
+        new(Operaciones.DocumentoCrear, "Documentos", "Crea un documento sin timbrar. Devuelve concepto, serie y folio.", """{"concepto":"5","serie":"A","clienteCodigo":"CLI0001","referencia":"FAC0001","partidas":[{"productoCodigo":"SERV0001","unidades":1,"precio":10,"almacen":"1"}]}"""),
+        new(Operaciones.DocumentoEmitir, "Documentos", "Timbra un documento (CFDI). La contraseña del certificado vive en el worker, no se envía.", """{"concepto":"5","serie":"A","folio":1}"""),
+        new(Operaciones.DocumentoObtenerArchivo, "Documentos", "Entrega el XML y/o el PDF de un documento timbrado (formato: xml, pdf o ambos). Con incluirContenido devuelve el archivo en base64.", """{"concepto":"5","serie":"A","folio":1,"formato":"ambos","incluirContenido":true}"""),
+        new(Operaciones.DocumentoCancelar, "Documentos", "Cancela un documento. Si está timbrado exige el motivo del SAT (01 a 04); el 01 pide uuidSustituto.", """{"concepto":"5","serie":"A","folio":1,"motivo":"02"}"""),
     ];
 
     public static OperacionInfo? Buscar(string tipoProceso) =>

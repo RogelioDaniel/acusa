@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Acusa.Contrato;
 using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Documentos;
@@ -30,7 +30,7 @@ public class LoteYActualizarTests
         await productosGw.CrearAsync(new NuevoProducto("PRUEBAPR1", "PRUEBA PRODUCTO", "PIEZA", 100m), default);
         var sesion = new SesionSimulada("EMPRESA DE PRUEBA");
         sesion.Iniciar();
-        var politica = new PoliticaEscritura(escritura, "PRUEBA", true, true);
+        var politica = new PoliticaEscritura(escritura, true, true);
         var documentosGw = new DocumentoGatewayEnMemoria(clientesGw, productosGw);
         var clientes = new ClienteService(clientesGw, sesion, politica);
         var documentos = new DocumentoService(documentosGw, sesion, politica, new ClaveFija());
@@ -86,13 +86,12 @@ public class LoteYActualizarTests
     }
 
     [Theory]
-    [InlineData("""{"codigo":"CLIENTEREAL","rfc":"EKU9003173C9"}""", "PRUEBA")]
     [InlineData("""{"codigo":"PRUEBACS1"}""", "nada que cambiar")]
     [InlineData("""{"codigo":"PRUEBACS1","rfc":"corto"}""", "RFC")]
     [InlineData("""{"codigo":"PRUEBACS1","regimenFiscal":"ABC"}""", "régimen")]
     [InlineData("""{"codigo":"PRUEBACS1","usoCfdi":"x"}""", "uso de CFDI")]
     [InlineData("""{"codigo":"PRUEBACS1","email":"sin-arroba"}""", "correo")]
-    public async Task Actualizar_rechaza_datos_invalidos_y_clientes_que_no_son_de_prueba(string payload, string fragmento)
+    public async Task Actualizar_rechaza_datos_invalidos(string payload, string fragmento)
     {
         var m = await CrearAsync();
 
@@ -141,8 +140,7 @@ public class LoteYActualizarTests
     {
         var m = await CrearAsync();
         var buenos = await DocumentosAsync(m, 2);
-        var real = await DocumentosAsync(m, 1, referencia: "FACTURA REAL");
-        var ids = new[] { buenos[0], real[0], buenos[1], 9999 };
+        var ids = new[] { buenos[0], 9999, buenos[1], 9998 };
 
         var r = await m.Ejecutor.EjecutarAsync(Tarea(Operaciones.DocumentoEmitirLote, Lote(ids)), default);
 
@@ -152,7 +150,7 @@ public class LoteYActualizarTests
         Assert.Equal(2, d.GetProperty("correctos").GetInt32());
         var detalle = d.GetProperty("resultados").EnumerateArray().ToList();
         Assert.True(detalle[0].GetProperty("ok").GetBoolean());
-        Assert.False(detalle[1].GetProperty("ok").GetBoolean()); // no es de prueba
+        Assert.False(detalle[1].GetProperty("ok").GetBoolean());
         Assert.True(detalle[2].GetProperty("ok").GetBoolean()); // sigue después del fallo
         Assert.Contains("No existe", detalle[3].GetProperty("error").GetString()!);
     }

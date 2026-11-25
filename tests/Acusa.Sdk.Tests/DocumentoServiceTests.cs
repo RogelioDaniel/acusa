@@ -1,4 +1,4 @@
-using Acusa.Sdk.Application.Clientes;
+﻿using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Documentos;
 using Acusa.Sdk.Application.Productos;
 using Acusa.Sdk.Application.Sesion;
@@ -38,7 +38,7 @@ public class DocumentoServiceTests
             Documentos = new DocumentoService(
                 new DocumentoGatewayEnMemoria(clientes, productos),
                 sesion,
-                new PoliticaEscritura(escritura, "PRUEBA", documentos)),
+                new PoliticaEscritura(escritura, documentos)),
         };
     }
 
@@ -186,24 +186,8 @@ public class DocumentoServiceTests
         Assert.Contains("PermitirEscritura", r.Mensaje);
     }
 
-    [Fact]
-    public async Task Rechaza_clientes_y_productos_que_no_son_de_prueba()
-    {
-        var e = await CrearAsync();
-
-        var cliente = await e.Documentos.CrearAsync(Valido(cliente: "CLIENTEREAL"), default);
-        var producto = await e.Documentos.CrearAsync(Valido(producto: "PRODREAL"), default);
-
-        Assert.Equal(TipoResultadoCrear.Invalido, cliente.Tipo);
-        Assert.Contains("código de cliente", cliente.Mensaje);
-        Assert.Equal(TipoResultadoCrear.Invalido, producto.Tipo);
-        Assert.Contains("producto de la partida 1", producto.Mensaje);
-    }
-
     [Theory]
     [InlineData("", "A", "PRUEBA X", 2, 100, "concepto es obligatorio")]
-    [InlineData("FAC", "A", "", 2, 100, "referencia es obligatoria")]
-    [InlineData("FAC", "A", "FACTURA REAL", 2, 100, "referencia debe empezar con PRUEBA")]
     [InlineData("FAC", "A", "PRUEBA X", 0, 100, "unidades de la partida 1")]
     [InlineData("FAC", "A", "PRUEBA X", 2, -5, "precio de la partida 1")]
     [InlineData("FAC", "SERIEMUYLARGA1", "PRUEBA X", 2, 100, "serie admite")]
@@ -262,6 +246,6 @@ public class DocumentoServiceTests
 
         await Assert.ThrowsAsync<SdkNoListoException>(() => e.Documentos.ObtenerAsync("FAC", "A", 1, default));
         await Assert.ThrowsAsync<SdkNoListoException>(() => e.Documentos.CrearAsync(Valido(), default));
-        Assert.Equal(TipoResultadoCrear.Invalido, (await e.Documentos.CrearAsync(Valido(cliente: "REAL"), default)).Tipo);
+        Assert.Equal(TipoResultadoCrear.Invalido, (await e.Documentos.CrearAsync(Valido(cliente: "REAL-1"), default)).Tipo);
     }
 }

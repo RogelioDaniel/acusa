@@ -3,38 +3,23 @@
 namespace Acusa.Sdk.Application.Clientes;
 
 /// <summary>
-/// Reglas para escribir en la empresa. La empresa es producción: solo se crean registros
-/// marcados como prueba y no existe ninguna operación de borrado ni de modificación.
+/// Reglas para escribir en la empresa: formatos y longitudes que acepta CONTPAQi, más los interruptores de escritura,
+/// documentos y timbrado que el cliente decide en la configuración del worker. No existe ninguna operación de borrado.
 /// </summary>
 /// <param name="Permitida">Si es <c>false</c>, toda escritura se rechaza.</param>
-/// <param name="Prefijo">Prefijo obligatorio del código y de la razón social.</param>
 /// <param name="PermitidaDocumentos">
-/// Candado aparte para documentos: crear uno consume un folio del concepto y un folio no se reutiliza.
+/// Interruptor aparte para documentos: crear uno consume un folio del concepto y un folio no se reutiliza.
 /// Requiere además <paramref name="Permitida"/>.
 /// </param>
 /// <param name="PermitidaTimbrado">
-/// Candado aparte para timbrar y cancelar: timbrar gasta un timbre del PAC y cancelar notifica al SAT; ninguna de las
+/// Interruptor aparte para timbrar y cancelar: timbrar gasta un timbre del PAC y cancelar notifica al SAT; ninguna de las
 /// dos se deshace. Requiere además <paramref name="Permitida"/> y <paramref name="PermitidaDocumentos"/>.
-/// </param>
-/// <param name="ClientesPermitidos">
-/// Códigos de clientes que ya existen en Comercial y que, por excepción, pueden recibir un documento aunque su código no
-/// empiece con el prefijo (un receptor real para probar el timbrado). Solo vale para el cliente del documento: los
-/// productos, la referencia y todo lo que se crea siguen exigiendo el prefijo. Vacío por defecto.
 /// </param>
 public sealed partial record PoliticaEscritura(
     bool Permitida,
-    string Prefijo = "PRUEBA",
     bool PermitidaDocumentos = false,
-    bool PermitidaTimbrado = false,
-    IReadOnlyCollection<string>? ClientesPermitidos = null,
-    Func<bool>? EsEmpresaReal = null)
+    bool PermitidaTimbrado = false)
 {
-    /// <summary>
-    /// Verdadero cuando la empresa abierta en este momento figura en <c>Contpaqi:EmpresasReales</c>: ahí se trabaja con datos
-    /// reales y no se exige el prefijo de prueba. Todo lo demás (escritura, documentos, timbrado, formatos) sigue igual.
-    /// </summary>
-    private bool ModoReal => EsEmpresaReal?.Invoke() == true;
-
     public const int LongitudMaximaCodigo = 20;
     public const int LongitudMaximaRazonSocial = 100;
     public const int LongitudMaximaNombreProducto = 60;
@@ -62,20 +47,10 @@ public sealed partial record PoliticaEscritura(
             return $"El código debe tener letras y números, sin guiones ni espacios, hasta {LongitudMaximaCodigo} caracteres.";
         }
 
-        if (!ModoReal && !codigo.StartsWith(Prefijo, StringComparison.Ordinal))
-        {
-            return $"El código debe empezar con {Prefijo}: en esta etapa solo se crean registros de prueba.";
-        }
-
         var razon = (cliente.RazonSocial ?? string.Empty).Trim();
         if (razon.Length == 0 || razon.Length > LongitudMaximaRazonSocial)
         {
             return $"La razón social es obligatoria y admite hasta {LongitudMaximaRazonSocial} caracteres.";
-        }
-
-        if (!ModoReal && !razon.StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"La razón social debe empezar con {Prefijo} para identificar el registro como prueba.";
         }
 
         if (cliente.Rfc is { Length: > 0 } rfc && !RfcValido().IsMatch(rfc))
@@ -105,7 +80,7 @@ public sealed partial record PoliticaEscritura(
         }
 
         var codigo = NormalizarCodigo(producto.Codigo);
-        var motivoCodigo = ValidarCodigoDePrueba(codigo, "código");
+        var motivoCodigo = ValidarCodigo(codigo, "código");
         if (motivoCodigo is not null)
         {
             return motivoCodigo;
@@ -115,11 +90,6 @@ public sealed partial record PoliticaEscritura(
         if (nombre.Length == 0 || nombre.Length > LongitudMaximaNombreProducto)
         {
             return $"El nombre es obligatorio y admite hasta {LongitudMaximaNombreProducto} caracteres.";
-        }
-
-        if (!ModoReal && !nombre.StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"El nombre debe empezar con {Prefijo} para identificar el registro como prueba.";
         }
 
         var unidad = (producto.UnidadBase ?? string.Empty).Trim();
@@ -171,7 +141,7 @@ public sealed partial record PoliticaEscritura(
             ? null
             : "La clave SAT del producto o servicio son 8 dígitos, por ejemplo 01010101 o 43232408.";
 
-    /// <summary>Valida los cambios a un producto. Solo se modifican productos de prueba (por su código).</summary>
+    /// <summary>Valida los cambios a un producto.</summary>
     public string? Validar(string codigoProducto, Productos.CambiosProducto cambios)
     {
         if (!Permitida)
@@ -179,7 +149,7 @@ public sealed partial record PoliticaEscritura(
             return "La escritura está deshabilitada. Se activa con Contpaqi:PermitirEscritura.";
         }
 
-        var motivoCodigo = ValidarCodigoDePrueba(NormalizarCodigo(codigoProducto), "código de producto");
+        var motivoCodigo = ValidarCodigo(NormalizarCodigo(codigoProducto), "código de producto");
         if (motivoCodigo is not null)
         {
             return motivoCodigo;
@@ -191,9 +161,9 @@ public sealed partial record PoliticaEscritura(
         }
 
         var nombre = (cambios.Nombre ?? string.Empty).Trim();
-        if (nombre.Length > 0 && (nombre.Length > LongitudMaximaNombreProducto || (!ModoReal && !nombre.StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase))))
+        if (nombre.Length > LongitudMaximaNombreProducto)
         {
-            return $"El nombre admite hasta {LongitudMaximaNombreProducto} caracteres y debe empezar con {Prefijo}.";
+            return $"El nombre admite hasta {LongitudMaximaNombreProducto} caracteres.";
         }
 
         if (cambios.Descripcion is { Length: > LongitudMaximaDescripcionProducto })
@@ -212,7 +182,7 @@ public sealed partial record PoliticaEscritura(
     public const int LongitudMaximaCalle = 100;
 
     /// <summary>
-    /// Valida el alta o cambio de una dirección de un cliente de prueba. El código postal es obligatorio: CFDI 4.0 lo exige
+    /// Valida el alta o cambio de una dirección de un cliente. El código postal es obligatorio: CFDI 4.0 lo exige
     /// en el receptor. Tipo 0 es la fiscal y 1 la de envío.
     /// </summary>
     public string? Validar(Clientes.Direccion d)
@@ -222,7 +192,7 @@ public sealed partial record PoliticaEscritura(
             return "La escritura está deshabilitada. Se activa con Contpaqi:PermitirEscritura.";
         }
 
-        var motivoCodigo = ValidarCodigoDePrueba(NormalizarCodigo(d.CodigoCliente), "código de cliente");
+        var motivoCodigo = ValidarCodigo(NormalizarCodigo(d.CodigoCliente), "código de cliente");
         if (motivoCodigo is not null)
         {
             return motivoCodigo;
@@ -285,22 +255,16 @@ public sealed partial record PoliticaEscritura(
         }
 
         var codigoCliente = NormalizarCodigo(documento.ClienteCodigo);
-        var excepcion = ClientesPermitidos?.Any(c => string.Equals(NormalizarCodigo(c), codigoCliente, StringComparison.Ordinal)) == true;
-        var motivoCliente = excepcion ? null : ValidarCodigoDePrueba(codigoCliente, "código de cliente");
+        var motivoCliente = ValidarCodigo(codigoCliente, "código de cliente");
         if (motivoCliente is not null)
         {
             return motivoCliente;
         }
 
         var referencia = (documento.Referencia ?? string.Empty).Trim();
-        if (referencia.Length > LongitudMaximaReferencia || (referencia.Length == 0 && !ModoReal))
+        if (referencia.Length > LongitudMaximaReferencia)
         {
-            return $"La referencia es obligatoria y admite hasta {LongitudMaximaReferencia} caracteres.";
-        }
-
-        if (!ModoReal && !referencia.StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"La referencia debe empezar con {Prefijo} para identificar el documento como prueba.";
+            return $"La referencia admite hasta {LongitudMaximaReferencia} caracteres.";
         }
 
         var partidas = documento.Partidas ?? [];
@@ -312,7 +276,7 @@ public sealed partial record PoliticaEscritura(
         for (var i = 0; i < partidas.Count; i++)
         {
             var p = partidas[i];
-            var motivoProducto = ValidarCodigoDePrueba(NormalizarCodigo(p.ProductoCodigo), $"código de producto de la partida {i + 1}");
+            var motivoProducto = ValidarCodigo(NormalizarCodigo(p.ProductoCodigo), $"código de producto de la partida {i + 1}");
             if (motivoProducto is not null)
             {
                 return motivoProducto;
@@ -363,9 +327,7 @@ public sealed partial record PoliticaEscritura(
     public const int LongitudMaximaEmail = 100;
 
     /// <summary>
-    /// Valida los cambios a un cliente. Solo se modifican clientes de prueba (por su código). La razón social puede ser
-    /// libre: un cliente de prueba que reciba un CFDI necesita el nombre exacto que corresponde a su RFC.
-    /// Devuelve el motivo del rechazo, o <c>null</c> si es válido.
+    /// Valida los cambios a un cliente. Devuelve el motivo del rechazo, o <c>null</c> si es válido.
     /// </summary>
     public string? Validar(string codigoCliente, Clientes.CambiosCliente cambios)
     {
@@ -374,7 +336,7 @@ public sealed partial record PoliticaEscritura(
             return "La escritura está deshabilitada. Se activa con Contpaqi:PermitirEscritura.";
         }
 
-        var motivoCodigo = ValidarCodigoDePrueba(NormalizarCodigo(codigoCliente), "código de cliente");
+        var motivoCodigo = ValidarCodigo(NormalizarCodigo(codigoCliente), "código de cliente");
         if (motivoCodigo is not null)
         {
             return motivoCodigo;
@@ -476,12 +438,6 @@ public sealed partial record PoliticaEscritura(
         return r.Folio > 0 ? null : "El folio debe ser mayor que cero.";
     }
 
-    /// <summary>Solo se timbra y se cancela lo que Acusa marcó como prueba. <c>null</c> si el documento lo es.</summary>
-    public string? ValidarDocumentoDePrueba(Documentos.Documento documento) =>
-        ModoReal || (documento.Referencia ?? string.Empty).StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase)
-            ? null
-            : $"Solo se timbran y se cancelan documentos de prueba: su referencia debe empezar con {Prefijo}.";
-
     /// <summary>
     /// Valida el motivo de cancelación del SAT. El motivo 01 exige el UUID del documento que lo sustituye; los demás
     /// no lo admiten. <c>null</c> si es válido.
@@ -504,20 +460,10 @@ public sealed partial record PoliticaEscritura(
         return uuid.Length == 0 ? null : "uuidSustituto solo aplica al motivo 01.";
     }
 
-    private string? ValidarCodigoDePrueba(string codigo, string etiqueta)
-    {
-        if (codigo.Length == 0 || codigo.Length > LongitudMaximaCodigo || !CodigoValido().IsMatch(codigo))
-        {
-            return $"El {etiqueta} debe tener letras y números, sin guiones ni espacios, hasta {LongitudMaximaCodigo} caracteres.";
-        }
-
-        if (!ModoReal && !codigo.StartsWith(Prefijo, StringComparison.Ordinal))
-        {
-            return $"El {etiqueta} debe empezar con {Prefijo}: en esta etapa solo se usan registros de prueba.";
-        }
-
-        return null;
-    }
+    private static string? ValidarCodigo(string codigo, string etiqueta) =>
+        codigo.Length == 0 || codigo.Length > LongitudMaximaCodigo || !CodigoValido().IsMatch(codigo)
+            ? $"El {etiqueta} debe tener letras y números, sin guiones ni espacios, hasta {LongitudMaximaCodigo} caracteres."
+            : null;
 
     [GeneratedRegex("^[A-Z0-9]+$")]
     private static partial Regex CodigoValido();

@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 /* Acusa Central 1.0.0: portal del orquestador. Sin dependencias ni paso de compilación.
    Todo el texto que viene del servidor entra con textContent (nunca como HTML). */
@@ -328,11 +328,9 @@ function operaciones(spec) {
 const ejemploDe = (op) => op.requestBody && op.requestBody.content && op.requestBody.content["application/json"] && op.requestBody.content["application/json"].example;
 const parametrosRuta = (ruta) => [...ruta.matchAll(/\{([^}]+)\}/g)].map((x) => x[1]);
 
-/** En una empresa de pruebas, los códigos de los ejemplos llevan el prefijo PRUEBA que exige el worker. */
+/** Los ejemplos se muestran tal como vienen en la documentación. */
 function paraEmpresa(texto) {
-  const e = memoria.get("empresa") || "";
-  if (!/PRUEBA/i.test(e)) return texto;
-  return texto.replaceAll("CLI0001", "PRUEBACL01").replaceAll("SERV0001", "PRUEBAPR01").replaceAll("FAC-0001", "PRUEBAFAC01").replace(/"serie": "A"/g, '"serie": "PRUEBA"').replace(/"serie":"A"/g, '"serie":"PRUEBA"');
+  return texto;
 }
 
 async function enviar(metodo, url, cuerpo, extra = {}) {
@@ -516,7 +514,7 @@ function vistaProbar(raiz) {
   api("/api/portal/empresas").then((es) => {
     empresaSel.replaceChildren(...es.map((e) => h("option", { value: e }, e)));
     const guardada = memoria.get("empresa");
-    empresaSel.value = es.includes(guardada) ? guardada : (es.find((e) => /PRUEBA/i.test(e)) || es[0] || "");
+    empresaSel.value = es.includes(guardada) ? guardada : (es[0] || "");
     memoria.set("empresa", empresaSel.value);
     empresaSel.addEventListener("change", () => { memoria.set("empresa", empresaSel.value); mostrar(); });
     pintarPestanas(); mostrar();
@@ -531,7 +529,7 @@ function flujoCompleto() {
   boton.addEventListener("click", async () => {
     const empresa = memoria.get("empresa");
     if (!empresa) { aviso("Registre una empresa en Configuración."); return; }
-    if (!/PRUEBA/i.test(empresa) && !confirm(`La empresa «${empresa}» no parece de pruebas. Timbrar gasta timbres reales. ¿Continuar?`)) return;
+    if (!confirm(`El flujo crea un cliente, un producto y una factura de $1 en «${empresa}» y la timbra: gasta un timbre real. ¿Continuar?`)) return;
     boton.disabled = true; salida.replaceChildren();
     const ctx = {};
     const hoy = new Date().toISOString().slice(0, 10);
@@ -540,10 +538,10 @@ function flujoCompleto() {
     const D = () => `${E}/documentos/${ctx.concepto}/${ctx.serie || "-"}/${ctx.folio}`;
     const llamar = async (m, ruta, c) => { const r = await enviar(m, ruta, c ? JSON.stringify(c) : null); recordar(m, ruta, c ? JSON.stringify(c) : "", r); return { ...r, ruta: `${m} ${ruta}` }; };
     const pasos = [
-      ["Cliente", async () => { ctx.cliente = "PRUEBACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "PRUEBA CLIENTE SA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000, codigoPostal: "06600" }); }],
-      ["Producto de $1", async () => { ctx.producto = "PRUEBAPR" + sufijo; return llamar("POST", `${E}/productos`, { codigo: ctx.producto, nombre: "PRUEBA SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); }],
+      ["Cliente", async () => { ctx.cliente = "ACUSACL" + sufijo; return llamar("POST", `${E}/clientes`, { codigo: ctx.cliente, razonSocial: "CLIENTE ACUSA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000, codigoPostal: "06600" }); }],
+      ["Producto de $1", async () => { ctx.producto = "ACUSAPR" + sufijo; return llamar("POST", `${E}/productos`, { codigo: ctx.producto, nombre: "SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); }],
       ["Documento", async () => {
-        const r = await llamar("POST", `${E}/documentos`, { concepto: "5", serie: "PRUEBA", clienteCodigo: ctx.cliente, referencia: "PRUEBAFAC" + sufijo, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }] });
+        const r = await llamar("POST", `${E}/documentos`, { concepto: "5", serie: "ACUSA", clienteCodigo: ctx.cliente, referencia: "ACUSAFAC" + sufijo, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }] });
         try { const d = JSON.parse(r.datos).resultado; ctx.concepto = d.concepto; ctx.serie = d.serie; ctx.folio = d.folio; } catch { /* el siguiente paso no se corre */ }
         return r;
       }],
@@ -640,7 +638,7 @@ function vistaConfig(raiz) {
     h("label", { class: "campo" }, h("span", null, "Contraseña nueva (mínimo 10 caracteres)"), nueva), h("button", { class: "boton", type: "submit" }, "Cambiar contraseña"));
 
   const lista = h("div");
-  const nombre = h("input", { placeholder: "adEMPRESA_DE_PRUEBA", maxlength: "80", required: true });
+  const nombre = h("input", { placeholder: "adMIEMPRESA", maxlength: "80", required: true });
   const alta = h("form", { class: "fila-acciones", onsubmit: async (e) => {
     e.preventDefault();
     try { await api("/api/portal/empresas", { method: "POST", body: JSON.stringify({ nombre: nombre.value }) }); nombre.value = ""; aviso("Empresa registrada"); cargar(); }

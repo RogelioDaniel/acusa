@@ -1,4 +1,4 @@
-namespace Acusa.Sdk.Application.Clientes;
+﻿namespace Acusa.Sdk.Application.Clientes;
 
 /// <summary>Acceso a clientes. La implementación real vive en la capa de integración con CONTPAQi.</summary>
 public interface IClienteGateway
@@ -11,7 +11,7 @@ public interface IClienteGateway
 
     /// <summary>
     /// Cambia solo los campos con valor de un cliente que ya existe. Si algo falla no deja cambios a medias.
-    /// El servicio ya validó los datos y que el cliente sea de prueba.
+    /// El servicio ya validó los datos.
     /// </summary>
     Task<ResultadoActualizar> ActualizarAsync(string codigo, CambiosCliente cambios, CancellationToken ct);
 
@@ -20,7 +20,7 @@ public interface IClienteGateway
 
     /// <summary>
     /// Crea la dirección del tipo indicado o, si el cliente ya la tiene, la completa con los campos que vengan con valor.
-    /// El servicio ya validó los datos y que el cliente sea de prueba.
+    /// El servicio ya validó los datos.
     /// </summary>
     Task<ResultadoDireccion> GuardarDireccionAsync(Direccion direccion, CancellationToken ct);
 }

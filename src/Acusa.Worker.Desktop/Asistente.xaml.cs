@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -47,7 +47,7 @@ public partial class Asistente : Window
     private readonly TextBlock _estadoSql = new(), _estadoSdk = new(), _estadoEmpresas = new(), _resumen = new(), _resultado = new(), _equipo = new();
     private readonly StackPanel _listaEmpresas = new();
     private readonly CheckBox _detComercial = new(), _detNominas = new(), _detConta = new();
-    private readonly List<(CheckBox Marca, RadioButton Principal, string Carpeta, CheckBox Real)> _empresas = new();
+    private readonly List<(CheckBox Marca, RadioButton Principal, string Carpeta)> _empresas = new();
 
     public Asistente(Config cfg)
     {
@@ -287,15 +287,12 @@ public partial class Asistente : Window
             fila.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             fila.ColumnDefinitions.Add(new ColumnDefinition());
             fila.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            fila.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             fila.Children.Add(marca);
             var texto = new TextBlock { Text = carpeta, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 12.5 };
             Grid.SetColumn(texto, 1); fila.Children.Add(texto);
-            var real = new CheckBox { Content = "Producción", IsChecked = _cfg.EmpresasReales.Contains(carpeta, StringComparer.OrdinalIgnoreCase), FontSize = 12, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "Empresa real: admite escritura y no exige el prefijo PRUEBA." };
-            Grid.SetColumn(real, 2); fila.Children.Add(real);
-            Grid.SetColumn(radio, 3); fila.Children.Add(radio);
+            Grid.SetColumn(radio, 2); fila.Children.Add(radio);
             _listaEmpresas.Children.Add(fila);
-            _empresas.Add((marca, radio, carpeta, real));
+            _empresas.Add((marca, radio, carpeta));
         }
 
         ActualizarContador();
@@ -344,7 +341,6 @@ public partial class Asistente : Window
             Secretos.GuardarLlave(llave);
             if (_sdkClave.Password.Length > 0) Secretos.GuardarClaveSdk(_sdkClave.Password);
             _cfg.Empresas = sel;
-            _cfg.EmpresasReales = _empresas.Where(x => x.Marca.IsChecked == true && x.Real.IsChecked == true).Select(x => x.Carpeta).ToList();
             _cfg.Empresa = _empresas.First(x => x.Principal.IsChecked == true && x.Marca.IsChecked == true).Carpeta;
             _cfg.InicioSinDialogo = true;
             _cfg.Configurado = true;

@@ -24,7 +24,7 @@
   <section id="v-programaciones">
     <div class="tarjeta">
       <h2>Programaciones</h2>
-      <p class="sub">Cada ejecución crea los documentos (documento.crear) y, si «Timbrar» está marcado, los emite (documento.emitir). Solo trabaja sobre una empresa de pruebas.</p>
+      <p class="sub">Cada ejecución crea los documentos (documento.crear) y, si «Timbrar» está marcado, los emite (documento.emitir).</p>
       <div id="programaciones"><div class="vacio">Cargando…</div></div>
     </div>
   </section>
@@ -95,7 +95,7 @@ async function iniciar() {
   $('empresa').textContent = cfg.empresa;
   $('contexto').textContent = `Concepto ${cfg.concepto} · serie ${cfg.serie} · cliente ${cfg.clienteCodigo} · producto ${cfg.productoCodigo}`;
   $('pie').textContent = `Acusa Programador · versión ${cfg.version}`;
-  if (!cfg.empresaSegura) { $('alerta').hidden = false; $('alerta').textContent = `La empresa ${cfg.empresa} no es de pruebas: por seguridad el Programador no manda órdenes.`; }
+  if (!cfg.empresaConfigurada) { $('alerta').hidden = false; $('alerta').textContent = 'Configure la empresa en Programador:Empresa: sin ella el Programador no manda órdenes.'; }
   total(); ver((location.hash || '#programaciones').slice(1)); refrescar(); setInterval(refrescar, 2000);
 }
 

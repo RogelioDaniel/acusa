@@ -1,4 +1,4 @@
-using Acusa.Sdk.Application.Clientes;
+﻿using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Productos;
 using Acusa.Sdk.Application.Sesion;
 using Acusa.Sdk.Application.Simulado;
@@ -44,12 +44,10 @@ public class ProductoServiceTests
     }
 
     [Theory]
-    [InlineData("REAL001", "PRUEBA X", "PIEZA", 1, "debe empezar con PRUEBA")]
     [InlineData("PRUEBA-1", "PRUEBA X", "PIEZA", 1, "sin guiones ni espacios")]
-    [InlineData("PRUEBAPR1", "PRODUCTO REAL", "PIEZA", 1, "El nombre debe empezar con PRUEBA")]
     [InlineData("PRUEBAPR1", "PRUEBA X", "", 1, "unidad base es obligatoria")]
     [InlineData("PRUEBAPR1", "PRUEBA X", "PIEZA", -1, "precio no puede ser negativo")]
-    public async Task Crear_rechaza_datos_que_no_son_de_prueba_o_estan_mal(string codigo, string nombre, string unidad, int precio, string fragmento)
+    public async Task Crear_rechaza_datos_mal_formados(string codigo, string nombre, string unidad, int precio, string fragmento)
     {
         var r = await Crear().CrearAsync(new NuevoProducto(codigo, nombre, unidad, precio), default);
 
@@ -101,7 +99,7 @@ public class ProductoServiceTests
         await Assert.ThrowsAsync<SdkNoListoException>(() => servicio.ObtenerAsync("PRUEBAPR1", default));
         await Assert.ThrowsAsync<SdkNoListoException>(() => servicio.CrearAsync(Valido(), default));
 
-        var invalido = await servicio.CrearAsync(new NuevoProducto("REAL001", "X", "PIEZA"), default);
+        var invalido = await servicio.CrearAsync(new NuevoProducto("REAL-001", "X", "PIEZA"), default);
         Assert.Equal(TipoResultadoCrear.Invalido, invalido.Tipo);
     }
 }

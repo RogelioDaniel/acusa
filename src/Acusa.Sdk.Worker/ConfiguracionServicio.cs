@@ -11,15 +11,18 @@ namespace Acusa.Sdk.Worker;
 /// <c>worker-llave.dat</c>, <c>worker-csd.dat</c> y <c>worker-sdk.dat</c>, cifrados con DPAPI de la máquina y con permisos solo para
 /// SYSTEM, Administradores y quien configuró. Aquí se traduce a los mismos valores que hoy pasa la aplicación por variables de entorno.
 /// </summary>
-internal static class ConfiguracionServicio
+public static class ConfiguracionServicio
 {
-    private static readonly string Carpeta = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Acusa");
+    private static readonly string CarpetaServidor = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Acusa");
     private static readonly byte[] Sal = Encoding.UTF8.GetBytes("acusa-worker");
 
     /// <summary>Agrega la configuración compartida y devuelve un resumen para la bitácora (sin secretos), o null si no hay configuración.</summary>
-    public static string? Aplicar(IConfigurationBuilder configuracion)
+    public static string? Aplicar(IConfigurationBuilder configuracion) => Aplicar(configuracion, CarpetaServidor);
+
+    /// <summary>Igual que <see cref="Aplicar(IConfigurationBuilder)"/>, leyendo la configuración de <paramref name="carpeta"/>.</summary>
+    public static string? Aplicar(IConfigurationBuilder configuracion, string carpeta)
     {
-        var archivo = Path.Combine(Carpeta, "worker-desktop.json");
+        var archivo = Path.Combine(carpeta, "worker-desktop.json");
         if (!File.Exists(archivo)) return null;
 
         using var doc = JsonDocument.Parse(File.ReadAllText(archivo));
@@ -30,7 +33,7 @@ internal static class ConfiguracionServicio
         var empresa = Texto(c, "Empresa");
         var simulado = Bool(c, "Simulado");
         v["Orquestador:Url"] = Texto(c, "Url");
-        v["Orquestador:LlaveWorker"] = Leer("worker-llave.dat");
+        v["Orquestador:LlaveWorker"] = Leer(carpeta, "worker-llave.dat");
         v["Contpaqi:RutaEmpresa"] = Path.Combine(@"C:\Compac\Empresas", empresa);
 
         var otras = Lista(c, "Empresas").Where(x => !string.Equals(x, empresa, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -49,26 +52,18 @@ internal static class ConfiguracionServicio
             v["Contpaqi:Usuario"] = Texto(c, "UsuarioSdk");
             v["Contpaqi:NombrePaq"] = Texto(c, "NombrePaq");
             v["Contpaqi:RutaSdk"] = Texto(c, "RutaSdk");
+            // Todas las empresas que atiende el worker admiten escritura; documentos y timbrado los decide la configuración.
             v["Contpaqi:PermitirEscritura"] = "true";
-            // Escritura: las empresas «Producción» (reales, sin prefijo PRUEBA) y las de pruebas; el resto es de consulta.
-            var atendidas = new[] { empresa }.Concat(otras).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var reales = Lista(c, "EmpresasReales").Where(x => atendidas.Contains(x, StringComparer.OrdinalIgnoreCase)).ToList();
-            var escribibles = atendidas.Where(x => reales.Contains(x, StringComparer.OrdinalIgnoreCase) || x.Contains("PRUEBA", StringComparison.OrdinalIgnoreCase)).ToList();
-            for (var j = 0; j < escribibles.Count; j++) v[$"Contpaqi:EmpresasEscritura:{j}"] = escribibles[j];
-            for (var j = 0; j < reales.Count; j++) v[$"Contpaqi:EmpresasReales:{j}"] = reales[j];
-
             var timbrado = Bool(c, "Timbrado");
-            if (Bool(c, "Documentos") || timbrado) v["Contpaqi:PermitirDocumentos"] = "true";
+            v["Contpaqi:PermitirDocumentos"] = (Bool(c, "Documentos") || timbrado) ? "true" : "false";
+            v["Contpaqi:PermitirTimbrado"] = timbrado ? "true" : "false";
             if (timbrado)
             {
-                v["Contpaqi:PermitirTimbrado"] = "true";
                 if (Bool(c, "CsdEnComercial")) v["Contpaqi:CertificadoGuardadoEnComercial"] = "true";
-                else if (Leer("worker-csd.dat") is { Length: > 0 } csd) Environment.SetEnvironmentVariable("ACUSA_CLAVE_CERTIFICADO", csd);
+                else if (Leer(carpeta, "worker-csd.dat") is { Length: > 0 } csd) Environment.SetEnvironmentVariable("ACUSA_CLAVE_CERTIFICADO", csd);
             }
 
-            var clientes = Texto(c, "Clientes").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            for (var i = 0; i < clientes.Length; i++) v[$"Contpaqi:ClientesPermitidos:{i}"] = clientes[i];
-            if (Leer("worker-sdk.dat") is { Length: > 0 } sdk) Environment.SetEnvironmentVariable("ACUSA_CLAVE_SDK", sdk);
+            if (Leer(carpeta, "worker-sdk.dat") is { Length: > 0 } sdk) Environment.SetEnvironmentVariable("ACUSA_CLAVE_SDK", sdk);
         }
 
         configuracion.AddInMemoryCollection(v);
@@ -81,11 +76,11 @@ internal static class ConfiguracionServicio
     private static IEnumerable<string> Lista(JsonElement c, string nombre) =>
         c.TryGetProperty(nombre, out var p) && p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList() : [];
 
-    private static string? Leer(string nombre)
+    private static string? Leer(string carpeta, string nombre)
     {
         try
         {
-            var ruta = Path.Combine(Carpeta, nombre);
+            var ruta = Path.Combine(carpeta, nombre);
             if (!File.Exists(ruta)) return null;
             return Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(ruta), Sal, DataProtectionScope.LocalMachine));
         }

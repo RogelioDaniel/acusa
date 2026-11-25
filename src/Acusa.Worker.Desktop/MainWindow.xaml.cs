@@ -194,10 +194,31 @@ public partial class MainWindow : Window
             fs.Seek(_posicionLog, SeekOrigin.Begin);
             using var lector = new StreamReader(fs, Encoding.UTF8);
             string? linea;
-            while ((linea = lector.ReadLine()) != null) MostrarLinea(linea);
+            while ((linea = lector.ReadLine()) != null) MostrarLinea(LineaLegible(linea));
             _posicionLog = fs.Position;
         }
         catch { /* el archivo puede estar ocupado un instante */ }
+    }
+
+    /// <summary>El worker escribe una línea JSON por evento; en pantalla se muestra como «HH:mm:ss NIVEL origen: mensaje».</summary>
+    internal static string LineaLegible(string linea)
+    {
+        if (!linea.StartsWith('{'))
+        {
+            return linea;
+        }
+
+        try
+        {
+            using var documento = System.Text.Json.JsonDocument.Parse(linea);
+            var raiz = documento.RootElement;
+            var hora = DateTime.Parse(raiz.GetProperty("hora").GetString()!, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind).ToLocalTime();
+            return $"{hora:HH:mm:ss} {raiz.GetProperty("nivel").GetString(),-5} {raiz.GetProperty("origen").GetString()}: {raiz.GetProperty("mensaje").GetString()}";
+        }
+        catch (Exception excepcion) when (excepcion is System.Text.Json.JsonException or KeyNotFoundException or FormatException or InvalidOperationException)
+        {
+            return linea;
+        }
     }
 
     private void Asistente_Click(object sender, RoutedEventArgs e)

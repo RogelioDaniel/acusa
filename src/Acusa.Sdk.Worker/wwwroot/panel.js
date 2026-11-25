@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 /* Panel local de Acusa Worker 1.0.0: Estado, Configuración y Bitácora.
    Solo se sirve en este equipo y todas las llamadas llevan el código de acceso local. */
@@ -194,7 +194,7 @@ function pintarConfig(cuerpo, c, empresasLocales) {
   const empresa = h("select", null,
     h("option", { value: "" }, "Elija una empresa"),
     ...[...new Set([c.empresa, ...empresasLocales].filter(Boolean))].map((n) => h("option", { value: n, selected: n === c.empresa }, n)));
-  const empresaManual = h("input", { placeholder: "o escriba el nombre, por ejemplo adEMPRESA_DE_PRUEBA", value: empresasLocales.includes(c.empresa) ? "" : (c.empresa || "") });
+  const empresaManual = h("input", { placeholder: "o escriba el nombre, por ejemplo adMIEMPRESA", value: empresasLocales.includes(c.empresa) ? "" : (c.empresa || "") });
   const rutaSdk = h("input", { value: c.rutaSdk, required: true });
   const inicio = h("select", null, h("option", { value: "Dialogo", selected: c.inicio === "Dialogo" }, "Diálogo: una persona escribe la clave de CONTPAQi"),
     h("option", { value: "Credenciales", selected: c.inicio === "Credenciales" }, "Credenciales guardadas (sin diálogo) — sin comprobar"));
@@ -236,13 +236,13 @@ function pintarConfig(cuerpo, c, empresasLocales) {
         h("label", { class: "campo" }, h("span", null, "Carpeta de CONTPAQi Comercial"), rutaSdk)),
       h("label", { class: "campo" }, h("span", null, "Inicio de sesión del SDK"), inicio), credenciales,
       h("label", { class: "interruptor" }, escritura, h("span", null, h("b", null, "Permitir crear y modificar en esta empresa"),
-        h("p", { class: "nota-campo" }, "Apagado, el worker solo lee. Encendido, además el código exige registros de prueba (códigos que empiezan con PRUEBA) hasta que se defina la política final.")))),
+        h("p", { class: "nota-campo" }, "Apagado, el worker solo lee. Encendido, crea y modifica clientes, productos y direcciones en las empresas que atiende.")))),
     h("div", { class: "tarjeta" }, h("h2", null, "Documentos y timbrado"),
-      h("p", { class: "sub" }, "Cada candado exige el anterior. Timbrar gasta un timbre del PAC y cancelar avisa al SAT; ninguna de las dos se deshace."),
+      h("p", { class: "sub" }, "Cada opción exige la anterior. Timbrar gasta un timbre del PAC y cancelar avisa al SAT; ninguna de las dos se deshace."),
       h("label", { class: "interruptor" }, documentosPermitidos, h("span", null, h("b", null, "Permitir crear documentos"),
         h("p", { class: "nota-campo" }, "Cada documento consume un folio del concepto, y un folio no se reutiliza."))),
       h("label", { class: "interruptor" }, timbradoPermitido, h("span", null, h("b", null, "Permitir timbrar y cancelar"),
-        h("p", { class: "nota-campo" }, "Solo documentos de prueba: su referencia debe empezar con PRUEBA. Un documento ya timbrado no se vuelve a timbrar."))),
+        h("p", { class: "nota-campo" }, "Un documento ya timbrado no se vuelve a timbrar."))),
       h("label", { class: "campo" }, h("span", null, "Contraseña del certificado (CSD)"), claveCertificado,
         h("p", { class: "nota-campo" }, "Se guarda cifrada para el usuario de Windows que ejecuta el worker. Nunca se envía en una orden ni se escribe en la bitácora."))),
     h("div", { class: "tarjeta" }, h("h2", null, "Este worker"), h("div", { class: "dos", style: "margin-top:10px" }, h("label", { class: "campo" }, h("span", null, "Nombre del worker"), workerId),

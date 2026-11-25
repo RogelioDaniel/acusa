@@ -35,7 +35,7 @@ public sealed class OpcionesOrquestador
 public sealed class ClienteOrquestador(HttpClient http, IOptions<OpcionesOrquestador> opciones)
 {
     /// <summary>Versión que se informa al portal.</summary>
-    public const string VersionWorker = "1.0.0";
+    public const string VersionWorker = "1.2.0";
 
     private string? _token;
     private DateTimeOffset _vence;
@@ -49,8 +49,35 @@ public sealed class ClienteOrquestador(HttpClient http, IOptions<OpcionesOrquest
             return null;
         }
 
+        if (r.StatusCode == HttpStatusCode.BadRequest)
+        {
+            throw new EmpresaRechazadaException(empresa, await r.Content.ReadAsStringAsync(ct));
+        }
+
         r.EnsureSuccessStatusCode();
         return await r.Content.ReadFromJsonAsync<TareaAsignada>(ct);
+    }
+
+    /// <summary>La versión publicada más nueva que la instalada, o <c>null</c> si no hay.</summary>
+    public async Task<ManifiestoActualizacion?> ConsultarActualizacionAsync(string versionInstalada, CancellationToken ct)
+    {
+        using var r = await EnviarAsync(() => new HttpRequestMessage(HttpMethod.Get, $"api/worker/actualizacion?version={Uri.EscapeDataString(versionInstalada)}"), ct);
+        if (r.StatusCode == HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+
+        r.EnsureSuccessStatusCode();
+        return await r.Content.ReadFromJsonAsync<ManifiestoActualizacion>(ct);
+    }
+
+    /// <summary>Descarga el paquete de una versión en <paramref name="destino"/>.</summary>
+    public async Task DescargarPaqueteAsync(string version, Stream destino, CancellationToken ct)
+    {
+        // Solo los encabezados cuentan para el tiempo máximo del cliente; el paquete (decenas de MB) se descarga después.
+        using var r = await EnviarAsync(() => new HttpRequestMessage(HttpMethod.Get, $"api/worker/actualizacion/{Uri.EscapeDataString(version)}/paquete"), ct, HttpCompletionOption.ResponseHeadersRead);
+        r.EnsureSuccessStatusCode();
+        await r.Content.CopyToAsync(destino, ct);
     }
 
     public async Task ReportarAsync(string tareaId, string workerId, ResultadoTarea resultado, CancellationToken ct)
@@ -68,14 +95,14 @@ public sealed class ClienteOrquestador(HttpClient http, IOptions<OpcionesOrquest
         new(metodo, ruta) { Content = JsonContent.Create(cuerpo) };
 
     /// <summary>Envía con el token vigente; si el orquestador responde 401, pide uno nuevo y reintenta una vez.</summary>
-    private async Task<HttpResponseMessage> EnviarAsync(Func<HttpRequestMessage> crear, CancellationToken ct)
+    private async Task<HttpResponseMessage> EnviarAsync(Func<HttpRequestMessage> crear, CancellationToken ct, HttpCompletionOption completar = HttpCompletionOption.ResponseContentRead)
     {
         for (var intento = 0; ; intento++)
         {
             await AsegurarTokenAsync(ct);
             var peticion = crear();
             peticion.Headers.Authorization = new("Bearer", _token);
-            var respuesta = await http.SendAsync(peticion, ct);
+            var respuesta = await http.SendAsync(peticion, completar, ct);
             if (respuesta.StatusCode != HttpStatusCode.Unauthorized || intento > 0)
             {
                 return respuesta;
@@ -108,6 +135,13 @@ public sealed class ClienteOrquestador(HttpClient http, IOptions<OpcionesOrquest
     }
 }
 
+/// <summary>Central rechazó la consulta de una empresa (por ejemplo, no está dada de alta para este cliente).</summary>
+public sealed class EmpresaRechazadaException(string empresa, string detalle)
+    : Exception($"Central rechazó la empresa {empresa}: {detalle}")
+{
+    public string Empresa { get; } = empresa;
+}
+
 /// <summary>
 /// Ciclo del worker: abre la sesión del SDK y, mientras esté lista, consulta las tareas de cada empresa que atiende, las
 /// ejecuta y informa el resultado. Una tarea a la vez: el SDK de CONTPAQi atiende una empresa por proceso y no admite
@@ -120,16 +154,10 @@ public sealed class ServicioWorker(
     EstadoWorker estado,
     IReadOnlyList<string> empresas,
     Func<string, string> rutaDe,
-    Func<string, bool> escrituraEn,
     string workerId,
     IOptions<OpcionesOrquestador> opciones,
     ILogger<ServicioWorker> log) : BackgroundService
 {
-    private static readonly HashSet<string> OperacionesDeLectura = new(StringComparer.Ordinal)
-    {
-        Operaciones.ClienteLeer, Operaciones.ProductoLeer, Operaciones.DocumentoLeer, Operaciones.DireccionLeer, Operaciones.DocumentoObtenerArchivo,
-    };
-
     /// <summary>Con una sola empresa se conserva el identificador; con varias, cada una se registra como su propio worker.</summary>
     private string IdDe(string empresa) => empresas.Count == 1 ? workerId : $"{workerId}-{empresa}";
 
@@ -139,6 +167,7 @@ public sealed class ServicioWorker(
         sesion.Iniciar();
 
         var fallos = 0;
+        var avisosRechazo = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         var sesionAvisada = false;
         while (!ct.IsCancellationRequested)
         {
@@ -167,7 +196,23 @@ public sealed class ServicioWorker(
                 foreach (var empresa in empresas)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var tarea = await orquestador.ConsultarAsync(IdDe(empresa), empresa, ct, espera);
+                    TareaAsignada? tarea;
+                    try
+                    {
+                        tarea = await orquestador.ConsultarAsync(IdDe(empresa), empresa, ct, espera);
+                    }
+                    catch (EmpresaRechazadaException ex)
+                    {
+                        // Una empresa rechazada no detiene a las demás; el aviso se repite cada 10 minutos para no llenar la bitácora.
+                        if (!avisosRechazo.TryGetValue(empresa, out var ultimo) || DateTime.UtcNow - ultimo > TimeSpan.FromMinutes(10))
+                        {
+                            avisosRechazo[empresa] = DateTime.UtcNow;
+                            log.LogWarning("{Mensaje} Se sigue con las demás empresas.", ex.Message);
+                        }
+
+                        continue;
+                    }
+
                     if (tarea is null)
                     {
                         continue;
@@ -220,11 +265,6 @@ public sealed class ServicioWorker(
         if (cambio is not null)
         {
             resultado = new ResultadoTarea(false, null, $"No se pudo abrir la empresa {empresa}: {cambio}", null);
-        }
-        else if (!OperacionesDeLectura.Contains(tarea.TipoProceso) && !escrituraEn(empresa))
-        {
-            // Solo las empresas nombradas en EmpresasEscritura admiten escritura; las demás son de consulta.
-            resultado = new ResultadoTarea(false, null, $"La empresa {empresa} es de consulta en este worker: no admite escribir, timbrar ni cancelar.", null);
         }
         else
         {

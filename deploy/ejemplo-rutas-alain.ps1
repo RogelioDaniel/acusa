@@ -11,7 +11,7 @@
    powershell -ExecutionPolicy Bypass -File .\ejemplo-rutas-alain.ps1
    powershell -ExecutionPolicy Bypass -File .\ejemplo-rutas-alain.ps1 -Cancelar        (avisa al SAT: solo con autorización)
 
- La llave de API se pide en pantalla o sale de ACUSA_LLAVE_API. Solo corre sobre una empresa de pruebas (el nombre debe contener PRUEBA).
+ La llave de API se pide en pantalla o sale de ACUSA_LLAVE_API.
 #>
 [CmdletBinding()]
 param(
@@ -23,7 +23,6 @@ param(
     [switch]$Cancelar
 )
 $ErrorActionPreference = 'Stop'
-if ($DbName -notmatch 'PRUEBA') { throw "Por seguridad este ejemplo solo corre en una empresa de pruebas (el nombre debe contener PRUEBA). Recibió: $DbName" }
 
 if ($env:ACUSA_LLAVE_API) { $llavePlana = $env:ACUSA_LLAVE_API }
 else {

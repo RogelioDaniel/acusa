@@ -1,4 +1,4 @@
-using Acusa.Sdk.Application.Sesion;
+﻿using Acusa.Sdk.Application.Sesion;
 
 namespace Acusa.Sdk.Application.Clientes;
 
@@ -32,7 +32,7 @@ public sealed class ClienteService(IClienteGateway gateway, ISesionSdk sesion, P
         return await gateway.CrearAsync(cliente, ct);
     }
 
-    /// <summary>Cambia datos de un cliente de prueba que ya existe (RFC, razón social, régimen, uso de CFDI, correo).</summary>
+    /// <summary>Cambia datos de un cliente que ya existe (RFC, razón social, régimen, uso de CFDI, correo).</summary>
     /// <exception cref="SdkNoListoException">La sesión del SDK no está iniciada.</exception>
     public async Task<ResultadoActualizar> ActualizarAsync(string codigo, CambiosCliente solicitud, CancellationToken ct)
     {
@@ -62,7 +62,7 @@ public sealed class ClienteService(IClienteGateway gateway, ISesionSdk sesion, P
         return gateway.BuscarDireccionAsync(PoliticaEscritura.NormalizarCodigo(codigoCliente), tipo, ct);
     }
 
-    /// <summary>Crea o completa la dirección (fiscal o de envío) de un cliente de prueba.</summary>
+    /// <summary>Crea o completa la dirección (fiscal o de envío) de un cliente.</summary>
     /// <exception cref="SdkNoListoException">La sesión del SDK no está iniciada.</exception>
     public async Task<ResultadoDireccion> GuardarDireccionAsync(Direccion solicitud, CancellationToken ct)
     {

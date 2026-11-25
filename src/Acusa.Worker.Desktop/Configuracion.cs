@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.AccessControl;
@@ -40,8 +40,6 @@ public sealed class Config
 
     // Empresas
     public List<string> Empresas { get; set; } = new();
-    /// <summary>Empresas que se tratan como reales: admiten escritura y no exigen el prefijo PRUEBA. Las demás empresas marcadas son de consulta, salvo las de pruebas (nombre con PRUEBA).</summary>
-    public List<string> EmpresasReales { get; set; } = new();
     public string Empresa { get; set; } = "";   // la principal: la que atiende este worker
 
     // Seguridad de escritura

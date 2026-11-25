@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Acusa.Contrato;
 using Acusa.Sdk.Application;
 using Acusa.Sdk.Application.Clientes;
@@ -72,7 +72,7 @@ public class TimbradoTests
         {
             Memoria = memoria,
             Gateway = espia,
-            Servicio = new DocumentoService(espia, sesion, new PoliticaEscritura(escritura, "PRUEBA", documentos, timbrado), new ClaveFija(clave)),
+            Servicio = new DocumentoService(espia, sesion, new PoliticaEscritura(escritura, documentos, timbrado), new ClaveFija(clave)),
         };
     }
 
@@ -123,19 +123,6 @@ public class TimbradoTests
 
         Assert.Equal(TipoResultadoDocumento.Invalido, timbra.Tipo);
         Assert.Equal(TipoResultadoDocumento.Invalido, cancela.Tipo);
-        Assert.Empty(e.Gateway.Llamadas);
-    }
-
-    [Fact]
-    public async Task No_se_timbra_un_documento_que_no_es_de_prueba()
-    {
-        var e = await CrearAsync();
-        var d = await NuevoDocumentoAsync(e, referencia: "FACTURA REAL");
-
-        var r = await e.Servicio.EmitirAsync(Ref(d), default);
-
-        Assert.Equal(TipoResultadoDocumento.Invalido, r.Tipo);
-        Assert.Contains("prueba", r.Mensaje!, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(e.Gateway.Llamadas);
     }
 
@@ -269,18 +256,6 @@ public class TimbradoTests
         Assert.Single(e.Gateway.Llamadas); // solo la primera cancelación
     }
 
-    [Fact]
-    public async Task No_se_cancela_un_documento_que_no_es_de_prueba()
-    {
-        var e = await CrearAsync();
-        var d = await NuevoDocumentoAsync(e, referencia: "FACTURA REAL");
-
-        var r = await e.Servicio.CancelarAsync(Ref(d), "02", null, default);
-
-        Assert.Equal(TipoResultadoDocumento.Invalido, r.Tipo);
-        Assert.Empty(e.Gateway.Llamadas);
-    }
-
     // ---- Ejecutor del worker: lo que ve quien manda la orden ----
 
     private static async Task<(Ejecutor Ejecutor, Escenario Escenario)> EjecutorAsync(bool timbrado = true)
@@ -360,39 +335,17 @@ public class TimbradoTests
     public void El_timbrado_exige_escritura_y_documentos_en_la_configuracion()
     {
         Assert.Null(new OpcionesContpaqi().ValidarTimbrado());
-        Assert.NotNull(new OpcionesContpaqi { PermitirTimbrado = true }.ValidarTimbrado());
-        Assert.NotNull(new OpcionesContpaqi { PermitirTimbrado = true, PermitirEscritura = true }.ValidarTimbrado());
+        Assert.NotNull(new OpcionesContpaqi { PermitirEscritura = false }.ValidarTimbrado());
+        Assert.NotNull(new OpcionesContpaqi { PermitirDocumentos = false }.ValidarTimbrado());
         Assert.Null(new OpcionesContpaqi { PermitirTimbrado = true, PermitirEscritura = true, PermitirDocumentos = true }.ValidarTimbrado());
     }
 
     [Fact]
-    public void El_timbrado_esta_apagado_por_defecto()
+    public void La_configuracion_del_worker_habilita_escritura_documentos_y_timbrado_por_defecto()
     {
-        Assert.False(new OpcionesContpaqi().PermitirTimbrado);
-        Assert.False(new PoliticaEscritura(true, "PRUEBA", true).PermitidaTimbrado);
-    }
-}
-
-public class ClientePermitidoTests
-{
-    private static NuevoDocumento Doc(string cliente) =>
-        new("5", "GEN", cliente, "PRUEBA-FACT", [new NuevaPartida("PRUEBAPR01", 1, 1m)]);
-
-    [Fact]
-    public void Un_cliente_real_se_rechaza_si_no_esta_en_la_lista()
-    {
-        var p = new Acusa.Sdk.Application.Clientes.PoliticaEscritura(true, "PRUEBA", true, true);
-        Assert.Contains("PRUEBA", p.Validar(Doc("CLI0042"))!);
-    }
-
-    [Fact]
-    public void Un_cliente_de_la_lista_pasa_sin_prefijo_pero_el_producto_y_la_referencia_siguen_igual()
-    {
-        var p = new Acusa.Sdk.Application.Clientes.PoliticaEscritura(true, "PRUEBA", true, true, ["cli0042"]);
-        Assert.Null(p.Validar(Doc("CLI0042")));
-        Assert.Contains("PRUEBA", p.Validar(Doc("OTRO"))!);
-        Assert.Contains("producto", p.Validar(new NuevoDocumento("5", "GEN", "CLI0042", "PRUEBA-FACT", [new NuevaPartida("REAL01", 1, 1m)]))!);
-        Assert.Contains("referencia", p.Validar(new NuevoDocumento("5", "GEN", "CLI0042", "FACTURA", [new NuevaPartida("PRUEBAPR01", 1, 1m)]))!);
+        var opciones = new OpcionesContpaqi();
+        Assert.True(opciones.PermitirEscritura && opciones.PermitirDocumentos && opciones.PermitirTimbrado);
+        Assert.False(new PoliticaEscritura(true, true).PermitidaTimbrado);
     }
 }
 
@@ -415,21 +368,6 @@ public class MultiempresaTests
     {
         var o = new Acusa.Sdk.Application.OpcionesContpaqi { RutaEmpresa = @"C:\Compac\Empresas\adUNICA" };
         Assert.Equal(["adUNICA"], o.EmpresasAtendidas);
-    }
-
-    [Fact]
-    public void SoloEscribeEnLasEmpresasNombradas()
-    {
-        var o = new Acusa.Sdk.Application.OpcionesContpaqi
-        {
-            RutaEmpresa = @"C:\Compac\Empresas\adEMPRESA_DE_PRUEBA",
-            PermitirEscritura = true,
-            EmpresasEscritura = ["adEMPRESA_DE_PRUEBA"],
-        };
-        Assert.True(o.EscrituraEn("adempresa_de_prueba"));
-        Assert.False(o.EscrituraEn("adLOCALSOLUTIONIT"));
-        o.PermitirEscritura = false;
-        Assert.False(o.EscrituraEn("adEMPRESA_DE_PRUEBA"));
     }
 
     [Fact]

@@ -22,7 +22,7 @@
    powershell -ExecutionPolicy Bypass -File .\ejemplo-flujo-alain.ps1 -Timbrar
 
  La llave de API (tipo Sistema) se pide en pantalla o sale de ACUSA_LLAVE_API; no se muestra ni se guarda.
- Solo corre sobre una empresa de pruebas (el nombre debe contener PRUEBA).
+
 #>
 [CmdletBinding()]
 param(
@@ -37,7 +37,6 @@ param(
     [int]$Esperar = 60
 )
 $ErrorActionPreference = 'Stop'
-if ($DbName -notmatch 'PRUEBA') { throw "Por seguridad este ejemplo solo corre en una empresa de pruebas (el nombre debe contener PRUEBA). Recibió: $DbName" }
 if ($Cancelar -and -not $Timbrar) { throw 'Cancelar una factura requiere -Timbrar: solo se cancela lo que se timbró en esta corrida.' }
 
 if ($env:ACUSA_LLAVE_API) { $llavePlana = $env:ACUSA_LLAVE_API }

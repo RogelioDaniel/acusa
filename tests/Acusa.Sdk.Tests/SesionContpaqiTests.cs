@@ -259,6 +259,22 @@ public sealed class SesionContpaqiTests : IDisposable
     }
 
     [Fact]
+    public async Task Iniciar_ConCredencialesSupervisorSinClave_AbreLaEmpresaSinPedirElDialogo()
+    {
+        _opciones.Inicio = "Credenciales";
+        _opciones.Usuario = "SUPERVISOR";
+        var sesion = CrearSesion(new ClaveFija(string.Empty));
+
+        sesion.Iniciar();
+        await EsperarFinDeInicioAsync(sesion);
+
+        Assert.Equal(EstadoSesion.Lista, sesion.Estado.Estado);
+        Assert.Contains("IniciarSesion(SUPERVISOR)", _funcionesSdk.Llamadas);
+        Assert.Contains($"AbrirEmpresa({RutaEmpresa})", _funcionesSdk.Llamadas);
+        Assert.DoesNotContain("InicializarSdk", _funcionesSdk.Llamadas);
+    }
+
+    [Fact]
     public async Task Iniciar_ConCredenciales_NoEscribeLaClaveEnLaTraza()
     {
         // Arrange

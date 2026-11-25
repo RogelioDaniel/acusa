@@ -1,4 +1,4 @@
-using Acusa.Sdk.Application.Clientes;
+﻿using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Sesion;
 using Acusa.Sdk.Application.Simulado;
 
@@ -45,23 +45,6 @@ public class ClienteServiceTests
         Assert.Contains("deshabilitada", r.Mensaje);
     }
 
-    [Theory]
-    [InlineData("CLI001", "PRUEBA X")]
-    [InlineData("PRUEBACS12", "CLIENTE REAL SA")]
-    [InlineData("PRUEBA-CS12", "PRUEBA X")]
-    [InlineData("PRUEBA CS12", "PRUEBA X")]
-    [InlineData("", "PRUEBA X")]
-    [InlineData("PRUEBACS12", "")]
-    [InlineData("PRUEBA123456789012345", "PRUEBA X")]
-    public async Task Crear_rechaza_registros_que_no_estan_marcados_como_prueba(string codigo, string razon)
-    {
-        var servicio = Crear();
-
-        var r = await servicio.CrearAsync(new NuevoCliente(codigo, razon), default);
-
-        Assert.Equal(TipoResultadoCrear.Invalido, r.Tipo);
-    }
-
     [Fact]
     public async Task Crear_no_pisa_un_cliente_existente()
     {
@@ -100,7 +83,7 @@ public class ClienteServiceTests
     {
         var servicio = Crear(sesionLista: false);
 
-        var r = await servicio.CrearAsync(new NuevoCliente("CLI001", "REAL"), default);
+        var r = await servicio.CrearAsync(new NuevoCliente("CLI-001", "REAL"), default);
 
         Assert.Equal(TipoResultadoCrear.Invalido, r.Tipo);
     }

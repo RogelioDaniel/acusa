@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Acusa.Contrato;
 using Acusa.Orquestador;
 
@@ -326,7 +326,7 @@ portal.MapPost("/empresas", (SolicitudEmpresa cuerpo, HttpContext http, Almacen 
 {
     if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
     var nombre = (cuerpo.Nombre ?? string.Empty).Trim();
-    if (nombre.Length is < 3 or > 80 || nombre.Any(c => !(char.IsLetterOrDigit(c) || c is '_' or '-' or ' ')))
+    if (!NombreEmpresaValido(nombre))
     {
         return Errores.Json(400, "El nombre de la empresa debe tener entre 3 y 80 caracteres: letras, números, guion y guion bajo.");
     }
@@ -375,9 +375,18 @@ worker.MapPost("/poll", async Task<IResult> (SolicitudPoll cuerpo, HttpContext h
         return Errores.Json(400, "Faltan workerId y empresa.");
     }
 
-    if (!a.EmpresaDelCliente(quien.ClienteId, cuerpo.Empresa))
+    // Las empresas las elige el cliente en la configuración de su worker: la primera vez que el worker consulta una, queda
+    // registrada para ese cliente (la llave del worker identifica al cliente). Solo se rechaza un nombre mal formado.
+    var empresaConsultada = cuerpo.Empresa.Trim();
+    if (!a.EmpresaDelCliente(quien.ClienteId, empresaConsultada))
     {
-        return Errores.Json(400, $"La empresa '{cuerpo.Empresa}' no está registrada para este cliente.");
+        if (!NombreEmpresaValido(empresaConsultada))
+        {
+            return Errores.Json(400, "El nombre de la empresa debe tener entre 3 y 80 caracteres: letras, números, guion y guion bajo.");
+        }
+
+        a.AgregarEmpresa(quien.ClienteId, empresaConsultada);
+        app.Logger.LogInformation("Empresa {Empresa} registrada por el worker {Worker}.", empresaConsultada, cuerpo.WorkerId.Trim());
     }
 
     // Con ?esperar=N el worker deja la consulta abierta hasta N segundos: si entra una orden, la recibe al instante en lugar
@@ -392,7 +401,7 @@ worker.MapPost("/poll", async Task<IResult> (SolicitudPoll cuerpo, HttpContext h
         }
 
         var aviso = notificador.SiguienteEncolada();
-        if (a.TomarTarea(quien.ClienteId, cuerpo.Empresa.Trim(), cuerpo.WorkerId.Trim(), Recortar(cuerpo.Version), Recortar(cuerpo.Host)) is { } tarea)
+        if (a.TomarTarea(quien.ClienteId, empresaConsultada, cuerpo.WorkerId.Trim(), Recortar(cuerpo.Version), Recortar(cuerpo.Host)) is { } tarea)
         {
             return Results.Ok(tarea);
         }
@@ -425,6 +434,73 @@ worker.MapPost("/tasks/{id}/result", (string id, string workerId, ResultadoTarea
     notificador.TareaTerminada(id);
     return Results.NoContent();
 });
+
+
+// ---- Actualizaciones del worker ----------------------------------------------------------------------
+// Quien publica sube el paquete firmado con su llave privada; Central verifica la firma con la llave pública y solo lo distribuye.
+// La ruta de publicación acepta llamadas remotas (la nube no tiene acceso local) pero exige la clave de administración y una firma válida.
+
+app.MapPost("/api/admin/worker/versiones", async Task<IResult> (HttpContext http, Opciones o, Almacen a) =>
+{
+    if (string.IsNullOrEmpty(o.ClaveAdmin) || !Seguridad.IgualesEnTiempoConstante(http.Request.Headers["x-admin-key"].ToString(), o.ClaveAdmin))
+    {
+        return Errores.NoAutorizado();
+    }
+
+    var version = http.Request.Headers["x-version"].ToString().Trim();
+    var firma = http.Request.Headers["x-firma"].ToString().Trim();
+    var notas = Recortar(Uri.UnescapeDataString(http.Request.Headers["x-notas"].ToString()));
+    if (!Version.TryParse(version, out _) || firma.Length == 0)
+    {
+        return Errores.Json(400, "Faltan los encabezados x-version (formato 1.2.3) y x-firma.");
+    }
+
+    if (http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limite)
+    {
+        limite.MaxRequestBodySize = 400L * 1024 * 1024;
+    }
+
+    using var memoria = new MemoryStream();
+    await http.Request.Body.CopyToAsync(memoria, http.RequestAborted);
+    var paquete = memoria.ToArray();
+    if (paquete.Length == 0)
+    {
+        return Errores.Json(400, "El cuerpo debe traer el paquete (.zip) de la versión.");
+    }
+
+    var manifiesto = new ManifiestoActualizacion(version, FirmaActualizaciones.Sha256De(new MemoryStream(paquete)), paquete.Length, firma, DateTime.UtcNow, notas);
+    if (!FirmaActualizaciones.Verificar(manifiesto, o.ClavePublicaActualizaciones))
+    {
+        return Errores.Json(400, "La firma no corresponde a este paquete o no la hizo la llave autorizada.");
+    }
+
+    a.GuardarVersionWorker(manifiesto, paquete);
+    app.Logger.LogInformation("Versión {Version} del worker publicada ({Tamano} bytes).", version, paquete.Length);
+    return Results.Created($"/api/worker/actualizacion/{version}/paquete", manifiesto);
+}).WithTags("Administración");
+
+worker.MapGet("/actualizacion", (string? version, HttpContext http, Almacen a, Seguridad seguridad) =>
+{
+    if (Autenticar(http, a, seguridad, Roles.Worker) is null) return Errores.NoAutorizado();
+    var ultima = a.ListarVersionesWorker().FirstOrDefault();
+    if (ultima is null || !FirmaActualizaciones.EsMasNueva(ultima.Version, version ?? "0.0.0"))
+    {
+        return Results.NoContent();
+    }
+
+    return Results.Ok(ultima);
+});
+
+worker.MapGet("/actualizacion/{version}/paquete", (string version, HttpContext http, Almacen a, Seguridad seguridad) =>
+{
+    if (Autenticar(http, a, seguridad, Roles.Worker) is null) return Errores.NoAutorizado();
+    return a.PaqueteWorker(version) is { } paquete
+        ? Results.File(paquete, "application/zip", $"acusa-worker-{version}.zip")
+        : Errores.Json(404, "No existe esa versión.");
+});
+
+portal.MapGet("/worker/versiones", (HttpContext http, Almacen a, Seguridad seguridad) =>
+    Autenticar(http, a, seguridad, Roles.Portal) is null ? Errores.NoAutorizado() : Results.Ok(a.ListarVersionesWorker()));
 
 app.Run();
 
@@ -459,6 +535,9 @@ static int? PreferenciaDeEspera(HttpContext http)
 
     return null;
 }
+
+static bool NombreEmpresaValido(string nombre) =>
+    nombre.Length is >= 3 and <= 80 && nombre.All(c => char.IsLetterOrDigit(c) || c is '_' or '-' or ' ');
 
 static string? Recortar(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim()[..Math.Min(texto.Trim().Length, 80)];
 
@@ -551,6 +630,9 @@ public sealed class Opciones
     public int MaxIntentos { get; set; } = 3;
     public int MaxPayloadBytes { get; set; } = 262_144;
 
+    /// <summary>Llave pública con la que Central acepta versiones del worker. Por omisión, la misma que trae compilada el worker.</summary>
+    public string ClavePublicaActualizaciones { get; set; } = FirmaActualizaciones.ClavePublica;
+
     /// <summary>
     /// Segundos que <c>POST /api/sdk/execute</c> espera el resultado antes de responder, cuando la solicitud no indica
     /// <c>?esperar=</c>. Con 0 (por omisión) responde enseguida con 202 y el identificador de la tarea. Con un valor mayor,
@@ -569,7 +651,7 @@ public sealed class Opciones
     /// <summary>Empresa de CONTPAQi donde se crean clientes y productos cuando no se indica una emisora. Vacía: la primera registrada.</summary>
     public string FacturacionEmpresa { get; set; } = string.Empty;
 
-    /// <summary>Prefijos de los códigos que Acusa genera. En una empresa de pruebas deben empezar con PRUEBA (variables Orquestador__FacturacionPrefijoCliente, ...Producto y ...Referencia); en una empresa real, no.</summary>
+    /// <summary>Prefijos de los códigos que Acusa genera (variables Orquestador__FacturacionPrefijoCliente, ...Producto y ...Referencia).</summary>
     public string FacturacionPrefijoCliente { get; set; } = "CS";
 
     public string FacturacionPrefijoProducto { get; set; } = "PR";

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Acusa.Contrato;
 using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Documentos;
@@ -18,7 +18,7 @@ public class AltaClienteProductoCamposTests
     {
         var sesion = new SesionSimulada("EMPRESA DE PRUEBA");
         sesion.Iniciar();
-        var politica = new PoliticaEscritura(true, "PRUEBA", true);
+        var politica = new PoliticaEscritura(true, true);
         var clientesGw = new ClienteGatewayEnMemoria();
         var productosGw = new ProductoGatewayEnMemoria();
         var clientes = new ClienteService(clientesGw, sesion, politica);
@@ -127,11 +127,11 @@ public class AltaClienteProductoCamposTests
         public string? ObtenerClave() => "clave-simulada";
     }
 
-    private static Escenario CrearConEmpresaReal(Func<bool> esReal)
+    private static Escenario CrearConEmpresaReal()
     {
         var sesion = new SesionSimulada("EMPRESA REAL");
         sesion.Iniciar();
-        var politica = new PoliticaEscritura(true, "PRUEBA", true, true, null, esReal);
+        var politica = new PoliticaEscritura(true, true, true);
         var clientesGw = new ClienteGatewayEnMemoria();
         var productosGw = new ProductoGatewayEnMemoria();
         var clientes = new ClienteService(clientesGw, sesion, politica);
@@ -141,20 +141,9 @@ public class AltaClienteProductoCamposTests
     }
 
     [Fact]
-    public async Task Fuera_de_una_empresa_real_se_sigue_exigiendo_el_prefijo_de_prueba()
-    {
-        var e = CrearConEmpresaReal(() => false);
-
-        var r = await e.Clientes.CrearAsync(new NuevoCliente("COMPANY001", "EMPRESA SA DE CV"), default);
-
-        Assert.Equal(TipoResultadoCrear.Invalido, r.Tipo);
-        Assert.Contains("PRUEBA", r.Mensaje);
-    }
-
-    [Fact]
     public async Task En_una_empresa_real_no_se_exige_el_prefijo_en_cliente_producto_ni_referencia()
     {
-        var e = CrearConEmpresaReal(() => true);
+        var e = CrearConEmpresaReal();
 
         var cliente = await e.Clientes.CrearAsync(new NuevoCliente("COMPANY001", "EMPRESA SA DE CV", "XAXX010101000"), default);
         var producto = await e.Productos.CrearAsync(new NuevoProducto("SERV001", "Servidor Pro", "SERVICIO", 2000m, ClaveSat: "81112200"), default);
@@ -170,7 +159,7 @@ public class AltaClienteProductoCamposTests
     [Fact]
     public async Task En_una_empresa_real_se_pueden_timbrar_documentos_sin_prefijo()
     {
-        var e = CrearConEmpresaReal(() => true);
+        var e = CrearConEmpresaReal();
         await e.Clientes.CrearAsync(new NuevoCliente("COMPANY002", "EMPRESA SA DE CV"), default);
         await e.Productos.CrearAsync(new NuevoProducto("SERV002", "Servicio", "SERVICIO", 100m), default);
         var creada = await e.Documentos.CrearAsync(
@@ -185,29 +174,11 @@ public class AltaClienteProductoCamposTests
     [Fact]
     public async Task En_una_empresa_real_sigue_rigiendo_el_formato_del_codigo()
     {
-        var e = CrearConEmpresaReal(() => true);
+        var e = CrearConEmpresaReal();
 
         var r = await e.Clientes.CrearAsync(new NuevoCliente("COMPANY-001", "EMPRESA SA DE CV"), default);
 
         Assert.Equal(TipoResultadoCrear.Invalido, r.Tipo);
-    }
-
-    [Fact]
-    public void Una_empresa_real_debe_tener_tambien_la_escritura_habilitada()
-    {
-        var opciones = new Acusa.Sdk.Application.OpcionesContpaqi
-        {
-            RutaEmpresa = @"C:\Compac\Empresas\adEMPRESA_A",
-            PermitirEscritura = true,
-            EmpresasEscritura = ["adEMPRESA_A"],
-            EmpresasReales = ["adEMPRESA_B"],
-        };
-
-        Assert.Contains("EmpresasReales", opciones.ValidarEscritura());
-        Assert.False(opciones.EsEmpresaReal("adEMPRESA_A"));
-        opciones.EmpresasEscritura = ["adEMPRESA_A", "adEMPRESA_B"];
-        Assert.Null(opciones.ValidarEscritura());
-        Assert.True(opciones.EsEmpresaReal("adempresa_b"));
     }
 
     [Fact]

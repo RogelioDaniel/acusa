@@ -32,43 +32,24 @@ public sealed class OpcionesContpaqi
     /// <summary>Ruta fija de la empresa. No se recorre el catálogo: el SDK ve empresas ajenas.</summary>
     public string RutaEmpresa { get; set; } = @"C:\Compac\Empresas\adLOCALSOLUTIONIT";
 
-    /// <summary>Lista de precios que lleva un cliente nuevo (1 en PRUEBACS11).</summary>
+    /// <summary>Lista de precios que lleva un cliente nuevo.</summary>
     public int ListaPrecios { get; set; } = 1;
 
-    /// <summary>Apagado por defecto: la empresa es producción.</summary>
-    public bool PermitirEscritura { get; set; }
+    /// <summary>Crear y modificar clientes, productos y direcciones en las empresas que atiende el worker.</summary>
+    public bool PermitirEscritura { get; set; } = true;
 
     /// <summary>
-    /// Apagado por defecto y aparte de <see cref="PermitirEscritura"/>: crear un documento consume un folio
-    /// del concepto y un folio no se reutiliza. Requiere <see cref="PermitirEscritura"/>.
+    /// Crear documentos. Aparte de <see cref="PermitirEscritura"/> porque crear un documento consume un folio del concepto
+    /// y un folio no se reutiliza. Requiere <see cref="PermitirEscritura"/>.
     /// </summary>
-    public bool PermitirDocumentos { get; set; }
+    public bool PermitirDocumentos { get; set; } = true;
 
     /// <summary>
-    /// Apagado por defecto y aparte de los demás: timbrar gasta un timbre del PAC y cancelar notifica al SAT; ninguna se
+    /// Timbrar y cancelar. Aparte de los demás porque timbrar gasta un timbre del PAC y cancelar notifica al SAT; ninguna se
     /// deshace. Requiere <see cref="PermitirEscritura"/> y <see cref="PermitirDocumentos"/>. La contraseña del certificado
     /// no va aquí: se guarda cifrada en el panel del worker o en <c>ACUSA_CLAVE_CERTIFICADO</c>.
     /// </summary>
-    public bool PermitirTimbrado { get; set; }
-
-    /// <summary>
-    /// Carpetas de empresa (solo el nombre, por ejemplo <c>adEMPRESA_DE_PRUEBA</c>) donde se permite escribir. En modo
-    /// Real, con <see cref="PermitirEscritura"/> activo, la empresa elegida debe estar aquí o la aplicación no abre.
-    /// Vacía por defecto: ninguna empresa admite escritura hasta nombrarla.
-    /// </summary>
-    public string[] EmpresasEscritura { get; set; } = [];
-
-    /// <summary>
-    /// Carpetas de empresa donde se trabaja con datos reales: ahí no se exige el prefijo de prueba en códigos, nombres ni
-    /// referencias. Cada una debe estar también en <see cref="EmpresasEscritura"/>. Vacía por defecto: toda empresa exige el
-    /// prefijo. Es la decisión que convierte una empresa de pruebas en una donde se factura de verdad.
-    /// </summary>
-    public string[] EmpresasReales { get; set; } = [];
-
-    /// <summary>Si la empresa, por su carpeta, es una de <see cref="EmpresasReales"/>.</summary>
-    public bool EsEmpresaReal(string? carpetaEmpresa) =>
-        PermitirEscritura && !string.IsNullOrWhiteSpace(carpetaEmpresa) &&
-        (EmpresasReales ?? []).Any(e => string.Equals(e, carpetaEmpresa, StringComparison.OrdinalIgnoreCase));
+    public bool PermitirTimbrado { get; set; } = true;
 
     /// <summary>
     /// Carpeta donde CONTPAQi deja el XML y el PDF (la "entrega de archivos en disco" del concepto). Opcional: si está vacía,
@@ -83,16 +64,8 @@ public sealed class OpcionesContpaqi
     /// </summary>
     public bool CertificadoGuardadoEnComercial { get; set; }
 
-    public string PrefijoPrueba { get; set; } = "PRUEBA";
-
     /// <summary>
-    /// Códigos de clientes existentes que pueden recibir un documento aunque no empiecen con el prefijo de prueba, para
-    /// timbrar contra un receptor real. Vacía por defecto; solo afecta al cliente del documento.
-    /// </summary>
-    public string[] ClientesPermitidos { get; set; } = [];
-
-    /// <summary>
-    /// Carpetas de las empresas que atiende este worker (solo el nombre, por ejemplo <c>adEMPRESA_DE_PRUEBA</c>), todas bajo la
+    /// Carpetas de las empresas que atiende este worker (solo el nombre, por ejemplo <c>adMIEMPRESA</c>), todas bajo la
     /// misma carpeta que <see cref="RutaEmpresa"/>. Vacía: el worker atiende solo la de <see cref="RutaEmpresa"/>.
     /// </summary>
     public string[] Empresas { get; set; } = [];
@@ -106,10 +79,6 @@ public sealed class OpcionesContpaqi
     public string RutaDe(string carpetaEmpresa) =>
         Path.Combine(Path.GetDirectoryName(RutaEmpresa.TrimEnd('\\', '/')) ?? string.Empty, carpetaEmpresa);
 
-    /// <summary>Si la empresa admite escritura: figura en <see cref="EmpresasEscritura"/> y la escritura está activa.</summary>
-    public bool EscrituraEn(string carpetaEmpresa) =>
-        PermitirEscritura && EmpresasEscritura.Any(e => string.Equals(e, carpetaEmpresa, StringComparison.OrdinalIgnoreCase));
-
     public bool EsSimulado => string.Equals(Modo, "Simulado", StringComparison.OrdinalIgnoreCase);
 
     public bool UsaCredenciales => string.Equals(Inicio, "Credenciales", StringComparison.OrdinalIgnoreCase);
@@ -118,31 +87,7 @@ public sealed class OpcionesContpaqi
     public string CarpetaEmpresa => Path.GetFileName(RutaEmpresa.TrimEnd('\\', '/'));
 
     /// <summary>
-    /// Con la escritura activa, la empresa elegida debe estar en <see cref="EmpresasEscritura"/>. Devuelve el motivo
-    /// del rechazo, o <c>null</c> si es válido (o si la escritura está apagada).
-    /// </summary>
-    public string? ValidarEscritura()
-    {
-        if (!PermitirEscritura)
-        {
-            return null;
-        }
-
-        var sinEscritura = (EmpresasReales ?? []).FirstOrDefault(r => !EmpresasEscritura.Any(e => string.Equals(e, r, StringComparison.OrdinalIgnoreCase)));
-        if (sinEscritura is not null)
-        {
-            return $"La empresa '{sinEscritura}' figura en Contpaqi:EmpresasReales pero no en Contpaqi:EmpresasEscritura. Una empresa real también debe tener la escritura habilitada.";
-        }
-
-        var carpeta = CarpetaEmpresa;
-        return EmpresasEscritura.Any(e => string.Equals(e, carpeta, StringComparison.OrdinalIgnoreCase))
-            ? null
-            : $"La escritura está habilitada, pero la empresa '{carpeta}' no figura en Contpaqi:EmpresasEscritura. " +
-              "Agregue el nombre de su carpeta solo si es una empresa de pruebas, o apague Contpaqi:PermitirEscritura.";
-    }
-
-    /// <summary>
-    /// El timbrado exige la escritura y los documentos activos; sin ellos no hay documento de prueba que timbrar.
+    /// El timbrado exige la escritura y los documentos activos; sin ellos no hay documento que timbrar.
     /// Devuelve el motivo del rechazo, o <c>null</c> si es válido (o si el timbrado está apagado).
     /// </summary>
     public string? ValidarTimbrado() =>

@@ -16,7 +16,6 @@ Seguridad:
     escriben en ningún archivo.
   - Por omisión no sigue si Montek está corriendo o si son los minutos :00 a :14 (INSTANT CAPITAL manda sus rachas hacia el :05):
     dos procesos con el SDK a la vez pueden cerrarse con un error nativo.
-  - Solo trabaja en la empresa indicada y con códigos que empiecen con PRUEBA.
   - Para detenerlo: cierre su ventana o Ctrl+C.
 #>
 param(
@@ -31,7 +30,6 @@ $ErrorActionPreference = 'Stop'
 $aqui = Split-Path -Parent $MyInvocation.MyCommand.Path
 $exe = Join-Path $aqui 'Acusa.Sdk.Worker.exe'
 if (-not (Test-Path $exe)) { throw "No encuentro $exe" }
-if ($Empresa -notmatch 'PRUEBA') { throw "La empresa '$Empresa' no parece de pruebas. Este script solo trabaja con empresas de pruebas." }
 
 # Guardia: el SDK admite un proceso a la vez y Montek no se toca.
 $montek = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*Montek*' } | Select-Object -ExpandProperty Name -Unique)

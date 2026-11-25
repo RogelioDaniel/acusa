@@ -1,4 +1,4 @@
-using Acusa.Sdk.Application.Clientes;
+﻿using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Sesion;
 
 namespace Acusa.Sdk.Application.Productos;
@@ -36,7 +36,7 @@ public sealed class ProductoService(IProductoGateway gateway, ISesionSdk sesion,
         return await gateway.CrearAsync(producto, ct);
     }
 
-    /// <summary>Cambia nombre, descripción, precio 1 o clave SAT de un producto de prueba que ya existe.</summary>
+    /// <summary>Cambia nombre, descripción, precio 1 o clave SAT de un producto que ya existe.</summary>
     /// <exception cref="SdkNoListoException">La sesión del SDK no está iniciada.</exception>
     public async Task<ResultadoActualizarProducto> ActualizarAsync(string codigo, CambiosProducto solicitud, CancellationToken ct)
     {

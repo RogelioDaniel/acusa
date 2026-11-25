@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -146,9 +146,7 @@ public static class PanelLocal
             cpq["Inicio"] = c.Inicio;
             cpq["Usuario"] = (c.UsuarioSdk ?? string.Empty).Trim();
             cpq["PermitirEscritura"] = c.PermitirEscritura;
-            // La escritura solo se habilita para la empresa elegida, y el código sigue exigiendo registros de prueba.
-            cpq["EmpresasEscritura"] = c.PermitirEscritura ? new JsonArray(c.Empresa.Trim()) : new JsonArray();
-            // Cada candado exige los anteriores: sin escritura no hay documentos, y sin documentos no hay timbrado.
+            // Cada interruptor exige los anteriores: sin escritura no hay documentos, y sin documentos no hay timbrado.
             cpq["PermitirDocumentos"] = c.PermitirEscritura && c.PermitirDocumentos;
             cpq["PermitirTimbrado"] = c.PermitirEscritura && c.PermitirDocumentos && c.PermitirTimbrado;
             if (!string.IsNullOrEmpty(c.ClaveCertificado))

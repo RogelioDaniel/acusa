@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -42,6 +42,18 @@ public sealed class EstadoWorker
             if (estado == "conectado")
             {
                 _ultimoContacto = DateTime.UtcNow;
+            }
+        }
+    }
+
+    /// <summary>Verdadero mientras se ejecuta una tarea: en ese momento no se aplica una actualización.</summary>
+    public bool Ocupado
+    {
+        get
+        {
+            lock (_candado)
+            {
+                return _actual is not null;
             }
         }
     }

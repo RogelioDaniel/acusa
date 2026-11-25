@@ -32,7 +32,7 @@ public class ArchivosCfdiTests
         await productos.CrearAsync(new NuevoProducto("PRUEBAPR1", "PRUEBA PRODUCTO", "PIEZA", 100m), default);
         var sesion = new SesionSimulada("EMPRESA DE PRUEBA");
         sesion.Iniciar();
-        var politica = new PoliticaEscritura(true, "PRUEBA", true, timbrado);
+        var politica = new PoliticaEscritura(true, true, timbrado);
         var gw = new DocumentoGatewayEnMemoria(clientes, productos);
         var documentos = new DocumentoService(gw, sesion, politica, new ClaveFija());
         return new Mundo
@@ -147,7 +147,7 @@ public class ArchivosCfdiTests
     {
         var sesion = new SesionSimulada("EMPRESA DE PRUEBA");
         sesion.Iniciar();
-        return Task.FromResult(new DocumentoService(m.Documentos, sesion, new PoliticaEscritura(true, "PRUEBA", true, false), new ClaveFija()));
+        return Task.FromResult(new DocumentoService(m.Documentos, sesion, new PoliticaEscritura(true, true, false), new ClaveFija()));
     }
 
     [Fact]

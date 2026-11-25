@@ -1,7 +1,7 @@
-// Acusa Programador 1.0.0: un sistema externo de ejemplo. Guarda "programaciones" (trabajos con su horario), las activa con una
+﻿// Acusa Programador 1.0.0: un sistema externo de ejemplo. Guarda "programaciones" (trabajos con su horario), las activa con una
 // casilla y manda las órdenes a la API de Acusa Central: documento.crear y documento.emitir. Tambien permite una factura manual.
 // No conoce CONTPAQi: solo cliente, producto, concepto y horario. La llave de API vive aquí, en el servidor, nunca en el navegador.
-// Solo trabaja sobre una empresa de pruebas (el nombre debe contener PRUEBA).
+// Trabaja sobre la empresa configurada en Programador:Empresa.
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -26,7 +26,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.MapGet("/api/config", (Opciones o) => new
 {
     o.Empresa, o.Concepto, o.Serie, o.ClienteCodigo, o.ProductoCodigo, o.Referencia, o.Almacen, o.UrlCentral,
-    empresaSegura = o.EmpresaSegura,
+    empresaConfigurada = o.EmpresaConfigurada,
     ahora = DateTime.Now,
     version = Marca.Version,
 });
@@ -43,7 +43,7 @@ app.MapPut("/api/programaciones/{id}", (string id, CambioProgramacion c, Planifi
 
 app.MapPost("/api/programaciones/{id}/ejecutar", (string id, Planificador p, Opciones o) =>
 {
-    if (!o.EmpresaSegura) return Results.BadRequest(new { error = $"Por seguridad solo se trabaja en una empresa de pruebas; '{o.Empresa}' no lo es." });
+    if (!o.EmpresaConfigurada) return Results.BadRequest(new { error = "Configure la empresa en Programador:Empresa." });
     return p.EjecutarAhora(id) is { } c ? Results.Accepted($"/api/corridas/{c.Id}", c) : Results.NotFound(new { error = "No existe esa programación." });
 });
 
@@ -55,7 +55,7 @@ app.MapGet("/api/facturas", (Bitacora b) => b.Todas());
 
 app.MapPost("/api/facturas", (SolicitudFactura s, Opciones o, Central c, Bitacora b) =>
 {
-    if (!o.EmpresaSegura) return Results.BadRequest(new { error = $"Por seguridad solo se trabaja en una empresa de pruebas; '{o.Empresa}' no lo es." });
+    if (!o.EmpresaConfigurada) return Results.BadRequest(new { error = "Configure la empresa en Programador:Empresa." });
     if (s.Cantidad <= 0 || s.Precio <= 0) return Results.BadRequest(new { error = "La cantidad y el precio deben ser mayores que cero." });
     var f = b.Nueva(
         string.IsNullOrWhiteSpace(s.ClienteCodigo) ? o.ClienteCodigo : s.ClienteCodigo.Trim().ToUpperInvariant(),
@@ -93,19 +93,19 @@ public sealed class Opciones
 {
     public string UrlCentral { get; set; } = "http://127.0.0.1:5090";
     public string LlaveApi { get; set; } = string.Empty;
-    public string Empresa { get; set; } = "adEMPRESA_DE_PRUEBA";
+    public string Empresa { get; set; } = string.Empty;
     public string Concepto { get; set; } = "5";
 
     /// <summary>Conceptos que se prueban, en orden, si Comercial rechaza el anterior por falta de permisos.</summary>
     public string[] ConceptosAlternos { get; set; } = [];
-    public string Serie { get; set; } = "PRUEBA";
-    public string ClienteCodigo { get; set; } = "PRUEBADEMO01";
-    public string ProductoCodigo { get; set; } = "PRUEBAPR01";
-    public string Referencia { get; set; } = "PRUEBA-PROGRAMADOR";
+    public string Serie { get; set; } = "A";
+    public string ClienteCodigo { get; set; } = "CLI0001";
+    public string ProductoCodigo { get; set; } = "SERV0001";
+    public string Referencia { get; set; } = "PROGRAMADOR";
     public string Almacen { get; set; } = "1";
 
-    /// <summary>Solo se opera sobre empresas de pruebas.</summary>
-    public bool EmpresaSegura => Empresa.Contains("PRUEBA", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Solo se opera cuando hay una empresa configurada.</summary>
+    public bool EmpresaConfigurada => !string.IsNullOrWhiteSpace(Empresa);
 }
 
 public sealed record SolicitudFactura(string? ClienteCodigo, string? ProductoCodigo, decimal Cantidad, decimal Precio);
@@ -257,7 +257,7 @@ public sealed class Planificador(Opciones o, Central central, Bitacora bitacora,
             if (c.DocumentosMax is { } mx) p.DocumentosMax = Math.Clamp(mx, p.DocumentosMin, 25);
             if (c.Activa is { } a)
             {
-                p.Activa = a && o.EmpresaSegura;
+                p.Activa = a && o.EmpresaConfigurada;
                 p.Proxima = p.Activa ? p.Siguiente(DateTime.Now) : null;
             }
 
@@ -323,7 +323,7 @@ public sealed class Planificador(Opciones o, Central central, Bitacora bitacora,
                 {
                     var precio = Math.Round((decimal)(_azar.NextDouble() * (double)(p.PrecioMax - p.PrecioMin)) + p.PrecioMin, 2);
                     var concepto = o.Concepto;
-                    var referencia = "PRUEBAP" + DateTime.Now.ToString("MMddHHmmss") + i;
+                    var referencia = "PROG" + DateTime.Now.ToString("MMddHHmmss") + i;
                     var (ok, doc) = await Paso(c, "documento.crear", () => central.EjecutarAsync("documento.crear", new
                     {
                         concepto, serie = o.Serie, clienteCodigo = o.ClienteCodigo, referencia,

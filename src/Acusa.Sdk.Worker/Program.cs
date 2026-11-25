@@ -39,7 +39,8 @@ if (!args.Contains("--simulado", StringComparer.OrdinalIgnoreCase) && !args.Cont
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile(DatosLocales.RutaConfig, optional: true, reloadOnChange: false);
 // Como servicio de Windows no hay sesión de usuario ni variables de entorno: la configuración sale de C:\ProgramData\Acusa.
-if (args.Contains("--servicio", StringComparer.OrdinalIgnoreCase) || Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
+var esServicio = args.Contains("--servicio", StringComparer.OrdinalIgnoreCase) || Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService();
+if (esServicio)
 {
     Console.WriteLine(ConfiguracionServicio.Aplicar(builder.Configuration) ?? @"Sin configuración en C:\ProgramData\Acusa: el worker espera a que un administrador lo configure.");
 }
@@ -90,7 +91,7 @@ else if (!opciones.EsSimulado)
 {
     faltante = !OperatingSystem.IsWindows()
         ? "El modo Real solo funciona en Windows con CONTPAQi Comercial instalado."
-        : opciones.ValidarInicio() ?? opciones.ValidarEscritura() ?? opciones.ValidarTimbrado();
+        : opciones.ValidarInicio() ?? opciones.ValidarTimbrado();
 }
 
 var configurado = faltante is null;
@@ -114,15 +115,7 @@ builder.Services.Configure<OpcionesOrquestador>(o =>
 if (configurado)
 {
     builder.Services.AddSingleton(opciones);
-    // El modo real se decide por la empresa abierta en cada momento: el worker puede atender varias y solo las listadas en
-    // Contpaqi:EmpresasReales dejan de exigir el prefijo de prueba.
-    builder.Services.AddSingleton(sp =>
-    {
-        var sesionActual = sp.GetRequiredService<ISesionSdk>();
-        return new PoliticaEscritura(
-            opciones.PermitirEscritura, opciones.PrefijoPrueba, opciones.PermitirDocumentos, opciones.PermitirTimbrado, opciones.ClientesPermitidos,
-            () => opciones.EsEmpresaReal(Path.GetFileName((sesionActual.Estado.Empresa ?? string.Empty).TrimEnd('\\', '/'))));
-    });
+    builder.Services.AddSingleton(new PoliticaEscritura(opciones.PermitirEscritura, opciones.PermitirDocumentos, opciones.PermitirTimbrado));
     // La contraseña del certificado nunca viaja en una orden: sale del panel (cifrada), de ACUSA_CLAVE_CERTIFICADO o, en simulación, es ficticia.
     builder.Services.AddSingleton<IProveedorClaveCertificado>(new ClaveCertificadoProtegida(opciones.EsSimulado ? "simulado" : claveCertificado, opciones.CertificadoGuardadoEnComercial));
     builder.Services.AddHttpClient<ClienteOrquestador>((sp, http) =>
@@ -171,10 +164,23 @@ if (configurado)
         sp.GetRequiredService<EstadoWorker>(),
         configurado ? opciones.EmpresasAtendidas : new[] { empresa },
         opciones.RutaDe,
-        opciones.EsSimulado ? (_ => true) : opciones.EscrituraEn,
         workerId,
         sp.GetRequiredService<IOptions<OpcionesOrquestador>>(),
         sp.GetRequiredService<ILogger<ServicioWorker>>()));
+
+    // Solo el servicio de Windows se actualiza solo: descarga de Central la versión firmada más nueva y la instala.
+    if (esServicio && !opciones.EsSimulado)
+    {
+        builder.Services.AddHostedService(sp => new Actualizador(
+            sp.GetRequiredService<ClienteOrquestador>(),
+            sp.GetRequiredService<EstadoWorker>(),
+            new CarpetaActualizaciones(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Acusa", "Actualizaciones")),
+            new AplicadorConPowerShell(),
+            sp.GetRequiredService<ILogger<Actualizador>>(),
+            TimeProvider.System,
+            ClienteOrquestador.VersionWorker,
+            Acusa.Contrato.FirmaActualizaciones.ClavePublica));
+    }
 }
 
 // El panel solo escucha en este equipo. Un puerto explícito evita heredar la variable Urls de otro programa.

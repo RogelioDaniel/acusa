@@ -28,7 +28,7 @@ public sealed record Documento(
     string? Uuid);
 
 /// <summary>Una partida del documento.</summary>
-/// <param name="ProductoCodigo">Producto que ya exista; en esta etapa debe ser de prueba.</param>
+/// <param name="ProductoCodigo">Producto que ya exista.</param>
 /// <param name="Unidades">Mayor que cero.</param>
 /// <param name="Precio">Precio unitario; no puede ser negativo.</param>
 /// <param name="Almacen">Código de almacén; vacío usa el predeterminado del concepto.</param>
@@ -47,8 +47,8 @@ public sealed record NuevaPartida(
 /// <summary>Documento sin timbrar (borrador). Timbrar y cancelar no forman parte de esta operación.</summary>
 /// <param name="Concepto">Código del concepto de documento, por ejemplo el de factura.</param>
 /// <param name="Serie">Serie del concepto; vacío si no usa serie.</param>
-/// <param name="ClienteCodigo">Cliente que ya exista; en esta etapa debe ser de prueba.</param>
-/// <param name="Referencia">Obligatoria y con prefijo de prueba: es la marca del documento. Hasta 20 caracteres.</param>
+/// <param name="ClienteCodigo">Cliente que ya exista.</param>
+/// <param name="Referencia">Opcional. Hasta 20 caracteres.</param>
 /// <param name="Partidas">Entre una y cincuenta.</param>
 /// <param name="Fecha">Fecha del documento; vacía usa la de hoy.</param>
 /// <param name="FormaPago">Clave SAT de la forma de pago (dos dígitos, por ejemplo 01 o 99); vacía no la asigna.</param>

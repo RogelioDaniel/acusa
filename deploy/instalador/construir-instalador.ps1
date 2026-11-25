@@ -52,7 +52,7 @@ AdminQuietInstCmd=%AppLaunched%
 UserQuietInstCmd=%AppLaunched%
 SourceFiles=SourceFiles
 [Strings]
-InstallPrompt=¿Instalar Acusa Worker en este equipo?
+InstallPrompt=¿Instalar o actualizar Acusa Worker? Si ya está instalado, se conserva su configuración y el servicio se reinicia solo.
 FinishMessage=
 TargetName=$destinoExe
 FriendlyName=Acusa Worker

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Acusa.Contrato;
 using Acusa.Sdk.Application.Clientes;
 using Acusa.Sdk.Application.Documentos;
@@ -19,7 +19,7 @@ public class DatosCfdiTests
         await productosGw.CrearAsync(new NuevoProducto("PRUEBAPR1", "PRUEBA PRODUCTO", "PIEZA", 100m), default);
         var sesion = new SesionSimulada("EMPRESA DE PRUEBA");
         sesion.Iniciar();
-        var politica = new PoliticaEscritura(escritura, "PRUEBA", true, true);
+        var politica = new PoliticaEscritura(escritura, true, true);
         return new Ejecutor(
             new ClienteService(clientesGw, sesion, politica),
             new ProductoService(productosGw, sesion, politica),
@@ -73,9 +73,7 @@ public class DatosCfdiTests
     [InlineData("""{"codigo":"PRUEBAPR1","claveSat":"123"}""", "8 dígitos")]
     [InlineData("""{"codigo":"PRUEBAPR1","claveSat":"ABCDEFGH"}""", "8 dígitos")]
     [InlineData("""{"codigo":"PRUEBAPR1"}""", "nada que cambiar")]
-    [InlineData("""{"codigo":"PRODUCTOREAL","claveSat":"01010101"}""", "PRUEBA")]
     [InlineData("""{"codigo":"PRUEBAPR1","precio1":-1}""", "negativo")]
-    [InlineData("""{"codigo":"PRUEBAPR1","nombre":"OTRO NOMBRE"}""", "PRUEBA")]
     public async Task Actualizar_producto_rechaza_datos_invalidos(string payload, string fragmento)
     {
         var e = await CrearAsync();
@@ -146,7 +144,6 @@ public class DatosCfdiTests
     [InlineData("""{"codigoCliente":"PRUEBACS1"}""", "5 dígitos")]
     [InlineData("""{"codigoCliente":"PRUEBACS1","codigoPostal":"42501","tipo":7}""", "fiscal")]
     [InlineData("""{"codigoCliente":"PRUEBACS1","codigoPostal":"42501","tipo":"otro"}""", "fiscal")]
-    [InlineData("""{"codigoCliente":"CLIENTEREAL","codigoPostal":"42501"}""", "PRUEBA")]
     public async Task Direccion_invalida_se_rechaza(string payload, string fragmento)
     {
         var e = await CrearAsync();

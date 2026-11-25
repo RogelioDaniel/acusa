@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Acusa.Contrato;
 using Microsoft.Data.Sqlite;
@@ -31,6 +31,7 @@ public sealed class Almacen
                 estado INTEGER NOT NULL, intentos INTEGER NOT NULL DEFAULT 0, creada TEXT NOT NULL, iniciada TEXT, terminada TEXT,
                 worker_id TEXT, resultado TEXT, error TEXT, codigo_sdk INTEGER);
             CREATE INDEX IF NOT EXISTS ix_tareas_cola ON tareas (estado, cliente_id, empresa, creada);
+            CREATE TABLE IF NOT EXISTS worker_versiones (version TEXT PRIMARY KEY, sha256 TEXT NOT NULL, tamano INTEGER NOT NULL, firma TEXT NOT NULL, notas TEXT, publicada TEXT NOT NULL, paquete BLOB NOT NULL);
             """);
 
         // Bases creadas antes de estas columnas: se agregan si faltan.
@@ -53,6 +54,40 @@ public sealed class Almacen
 
         // Una llave de idempotencia identifica una orden de un cliente: la base misma impide registrarla dos veces.
         Ejecutar("CREATE UNIQUE INDEX IF NOT EXISTS ux_tareas_llave ON tareas (cliente_id, llave) WHERE llave IS NOT NULL");
+    }
+
+    // ---- Versiones del worker --------------------------------------------------------------
+
+    /// <summary>Guarda (o reemplaza) una versión publicada del worker con su paquete. La firma ya fue verificada.</summary>
+    public void GuardarVersionWorker(Acusa.Contrato.ManifiestoActualizacion manifiesto, byte[] paquete) =>
+        Ejecutar(
+            "INSERT OR REPLACE INTO worker_versiones (version, sha256, tamano, firma, notas, publicada, paquete) VALUES ($v, $s, $t, $f, $n, $p, $d)",
+            ("$v", manifiesto.Version), ("$s", manifiesto.Sha256), ("$t", manifiesto.Tamano), ("$f", manifiesto.Firma),
+            ("$n", manifiesto.Notas), ("$p", manifiesto.Publicada.ToString("O")), ("$d", paquete));
+
+    /// <summary>Versiones publicadas, sin el paquete, de la más nueva a la más vieja.</summary>
+    public IReadOnlyList<Acusa.Contrato.ManifiestoActualizacion> ListarVersionesWorker()
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT version, sha256, tamano, firma, publicada, notas FROM worker_versiones");
+        using var lector = comando.ExecuteReader();
+        var versiones = new List<Acusa.Contrato.ManifiestoActualizacion>();
+        while (lector.Read())
+        {
+            versiones.Add(new Acusa.Contrato.ManifiestoActualizacion(
+                lector.GetString(0), lector.GetString(1), lector.GetInt64(2), lector.GetString(3),
+                DateTime.Parse(lector.GetString(4), null, System.Globalization.DateTimeStyles.RoundtripKind), lector.IsDBNull(5) ? null : lector.GetString(5)));
+        }
+
+        return [.. versiones.OrderByDescending(v => Version.TryParse(v.Version, out var numero) ? numero : new Version(0, 0))];
+    }
+
+    /// <summary>Paquete de una versión publicada, o <c>null</c> si no existe.</summary>
+    public byte[]? PaqueteWorker(string version)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT paquete FROM worker_versiones WHERE version=$v", ("$v", version));
+        return comando.ExecuteScalar() as byte[];
     }
 
     // ---- Administración -------------------------------------------------------------------

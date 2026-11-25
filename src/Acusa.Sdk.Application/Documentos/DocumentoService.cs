@@ -11,8 +11,8 @@ public sealed class DocumentoService(
     IProveedorClaveCertificado? certificado = null)
 {
     /// <summary>
-    /// Timbra un documento de prueba que ya existe. Antes de llamar al SDK comprueba que los candados estén abiertos,
-    /// que el documento sea de prueba, que no esté cancelado ni timbrado ya (no se timbra dos veces) y que el worker
+    /// Timbra un documento que ya existe. Antes de llamar al SDK comprueba que el timbrado esté habilitado,
+    /// que el documento no esté cancelado ni timbrado ya (no se timbra dos veces) y que el worker
     /// tenga la contraseña del certificado.
     /// </summary>
     /// <exception cref="SdkNoListoException">La sesión del SDK no está iniciada.</exception>
@@ -38,12 +38,6 @@ public sealed class DocumentoService(
             return NoEncontrado(referencia);
         }
 
-        motivo = politica.ValidarDocumentoDePrueba(documento);
-        if (motivo is not null)
-        {
-            return Invalido(motivo);
-        }
-
         if (documento.Cancelado)
         {
             return Invalido("El documento está cancelado y no se puede timbrar.");
@@ -65,7 +59,7 @@ public sealed class DocumentoService(
     }
 
     /// <summary>
-    /// Cancela un documento de prueba. Si está timbrado exige el motivo del SAT; si es un borrador sin timbrar lo cancela
+    /// Cancela un documento. Si está timbrado exige el motivo del SAT; si es un borrador sin timbrar lo cancela
     /// solo en CONTPAQi.
     /// </summary>
     /// <exception cref="SdkNoListoException">La sesión del SDK no está iniciada.</exception>
@@ -91,12 +85,6 @@ public sealed class DocumentoService(
             return NoEncontrado(referencia);
         }
 
-        motivo = politica.ValidarDocumentoDePrueba(documento);
-        if (motivo is not null)
-        {
-            return Invalido(motivo);
-        }
-
         if (documento.Cancelado)
         {
             return Invalido("El documento ya está cancelado.", documento);
@@ -119,8 +107,8 @@ public sealed class DocumentoService(
     }
 
     /// <summary>
-    /// Entrega el XML y/o el PDF de un documento ya timbrado. Es una consulta: no pide candados ni exige documento de
-    /// prueba, porque no cambia nada fiscal (solo deja archivos en el equipo del worker).
+    /// Entrega el XML y/o el PDF de un documento ya timbrado. Es una consulta: no pide los interruptores de escritura,
+    /// porque no cambia nada fiscal (solo deja archivos en el equipo del worker).
     /// </summary>
     /// <exception cref="SdkNoListoException">La sesión del SDK no está iniciada.</exception>
     public async Task<ResultadoArchivos> ObtenerArchivosAsync(ReferenciaDocumento referencia, FormatoArchivo formato, bool incluirContenido, CancellationToken ct)

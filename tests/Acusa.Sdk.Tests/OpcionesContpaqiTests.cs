@@ -1,4 +1,4 @@
-using Acusa.Sdk.Application;
+﻿using Acusa.Sdk.Application;
 
 namespace Acusa.Sdk.Tests;
 
@@ -32,50 +32,6 @@ public class OpcionesContpaqiTests
         var o = new OpcionesContpaqi { Inicio = "Magia" };
 
         Assert.Contains("Magia", o.ValidarInicio());
-    }
-
-    [Fact]
-    public void Con_la_escritura_apagada_no_se_exige_lista_de_empresas()
-    {
-        var o = new OpcionesContpaqi { PermitirEscritura = false, RutaEmpresa = @"C:\Compac\Empresas\adCualquiera" };
-
-        Assert.Null(o.ValidarEscritura());
-    }
-
-    [Fact]
-    public void Con_la_escritura_activa_la_empresa_debe_estar_en_la_lista()
-    {
-        var o = new OpcionesContpaqi
-        {
-            PermitirEscritura = true,
-            RutaEmpresa = @"C:\Compac\Empresas\adLOCALSOLUTIONIT",
-            EmpresasEscritura = ["adEMPRESA_DE_PRUEBA"],
-        };
-
-        Assert.Contains("adLOCALSOLUTIONIT", o.ValidarEscritura());
-    }
-
-    [Theory]
-    [InlineData(@"C:\Compac\Empresas\adEMPRESA_DE_PRUEBA")]
-    [InlineData(@"C:\Compac\Empresas\adempresa_de_prueba\")]
-    public void Una_empresa_de_la_lista_admite_escritura_sin_importar_mayusculas_ni_barra_final(string ruta)
-    {
-        var o = new OpcionesContpaqi
-        {
-            PermitirEscritura = true,
-            RutaEmpresa = ruta,
-            EmpresasEscritura = ["adEMPRESA_DE_PRUEBA"],
-        };
-
-        Assert.Null(o.ValidarEscritura());
-    }
-
-    [Fact]
-    public void Sin_lista_ni_empresa_la_escritura_activa_se_rechaza()
-    {
-        var o = new OpcionesContpaqi { PermitirEscritura = true, RutaEmpresa = string.Empty };
-
-        Assert.NotNull(o.ValidarEscritura());
     }
 
     [Fact]

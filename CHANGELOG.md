@@ -10,6 +10,20 @@
 - Cada respuesta incluye `X-Correlation-Id` (se conserva el que envía quien llama). Central escribe logs JSON, una línea por evento, con
   el identificador de correlación; el worker escribe `worker-AAAAMMDD.log` en JSON.
 - Los logs ocultan llaves de API y de worker, tokens, contraseñas y datos del certificado; no registran cabeceras, cuerpos ni query strings.
+- El worker opera en todas las empresas que el cliente elige en su configuración. Ya no se exige el prefijo `PRUEBA` en códigos, razón
+  social, nombres ni referencias, y desaparecen `EmpresasEscritura`, `EmpresasReales`, `ClientesPermitidos` y la casilla «Producción»
+  del asistente. Escritura, documentos y timbrado siguen siendo interruptores de la configuración, encendidos por omisión.
+- Central registra para el cliente la empresa que su worker consulta por primera vez; solo rechaza nombres mal formados.
+- Si Central rechaza una empresa, el worker la salta y sigue con las demás (antes detenía la ronda completa y esperaba 60 s).
+- La referencia del documento es opcional.
+- Actualización automática del worker (1.2.0). `deploy/instalador/publicar-actualizacion.ps1` empaqueta y firma la versión con la
+  llave privada de quien publica (RSA-PSS, SHA-256) y la sube a Central (`POST /api/admin/worker/versiones`, clave de administración).
+  Central verifica la firma y solo la distribuye (`GET /api/worker/actualizacion`, `…/{version}/paquete`). Cada 30 minutos, sin
+  tareas en curso y fuera de los minutos 00 a 14, el worker descarga la versión más nueva, verifica firma, tamaño y SHA-256, respalda la
+  instalada y la instala conservando la configuración. Si la nueva no abre CONTPAQi, regresa a la anterior y no vuelve a intentar esa versión.
+- El instalador avisa al terminar: versión anterior y nueva, configuración conservada, estado del servicio y de la conexión a CONTPAQi.
+- Corregido: el servicio iniciaba con el diálogo de CONTPAQi en lugar de usuario y contraseña (1.1.0); `instalar.ps1` tenía la marca
+  BOM repetida y PowerShell no reconocía sus parámetros (1.1.1).
 
 ## 1.1.0 (2026-11-13)
 

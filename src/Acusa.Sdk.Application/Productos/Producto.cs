@@ -1,4 +1,4 @@
-namespace Acusa.Sdk.Application.Productos;
+﻿namespace Acusa.Sdk.Application.Productos;
 
 /// <summary>Producto o servicio leído de CONTPAQi (tabla admProductos).</summary>
 /// <param name="Codigo">CCODIGOPRODUCTO.</param>
@@ -19,9 +19,9 @@ public sealed record Producto(
     string? UnidadBase,
     string? ClaveSat = null);
 
-/// <summary>Datos para dar de alta un producto de prueba.</summary>
-/// <param name="Codigo">Debe empezar con el prefijo de prueba.</param>
-/// <param name="Nombre">Debe empezar con el prefijo de prueba.</param>
+/// <summary>Datos para dar de alta un producto.</summary>
+/// <param name="Codigo">Hasta 20 caracteres.</param>
+/// <param name="Nombre">Hasta 60 caracteres.</param>
 /// <param name="UnidadBase">Nombre de una unidad que ya exista en la empresa.</param>
 /// <param name="Precio1">Precio de la lista 1; no puede ser negativo.</param>
 /// <param name="Descripcion">Opcional.</param>
