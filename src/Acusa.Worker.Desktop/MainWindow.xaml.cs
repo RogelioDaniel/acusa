@@ -286,7 +286,7 @@ public partial class MainWindow : Window
         _bandeja.DoubleClick += (_, _) => Mostrar();
     }
 
-    private void Mostrar()
+    internal void Mostrar()
     {
         Show();
         WindowState = WindowState.Normal;

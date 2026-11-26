@@ -42,6 +42,34 @@ function Leer-Configuracion {
     } catch { return $null }
 }
 
+function Detener-Worker {
+    if (Get-Service AcusaWorker -ErrorAction SilentlyContinue) {
+        Stop-Service AcusaWorker -Force -ErrorAction SilentlyContinue
+        try { (Get-Service AcusaWorker).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30)) } catch { }
+    }
+    $limite = (Get-Date).AddSeconds(60)
+    while ((Get-Date) -lt $limite) {
+        $procesos = Get-Process -Name 'Acusa.Worker.Desktop', 'Acusa.Sdk.Worker' -ErrorAction SilentlyContinue
+        if (-not $procesos) { break }
+        $procesos | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+    }
+    Start-Sleep -Seconds 2
+}
+
+function Copiar-ConReintentos([string]$archivo, [string]$carpeta) {
+    for ($intento = 1; $intento -le 20; $intento++) {
+        try {
+            Copy-Item $archivo $carpeta -Force -ErrorAction Stop
+            return
+        } catch {
+            if ($intento -eq 20) { throw }
+            Get-Process -Name 'Acusa.Worker.Desktop', 'Acusa.Sdk.Worker' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
 # Lee la bitácora del worker desde $desde y decide si ya abrió CONTPAQi. Entiende el formato JSON (1.1+) y el de texto (1.0).
 function Esperar-Conexion([datetime]$desde, [int]$segundos = 120) {
     $limite = (Get-Date).AddSeconds($segundos)
@@ -96,13 +124,10 @@ try {
     if (-not $anterior -and (Test-Path (Join-Path $destino 'Acusa.Worker.Desktop.exe'))) { $anterior = 'anterior' }
     $configuracion = Leer-Configuracion
 
-    # Se detiene el servicio y se cierra la app para poder reemplazar los archivos.
-    if (Get-Service AcusaWorker -ErrorAction SilentlyContinue) {
-        Stop-Service AcusaWorker -Force -ErrorAction SilentlyContinue
-        (Get-Service AcusaWorker).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
-    }
-    Get-Process -Name 'Acusa.Worker.Desktop', 'Acusa.Sdk.Worker' -ErrorAction SilentlyContinue | Stop-Process -Force
-    Start-Sleep -Seconds 2
+    $appAbierta = [bool](Get-Process -Name 'Acusa.Worker.Desktop' -ErrorAction SilentlyContinue)
+
+    # Se detiene el servicio y se cierra la app, y se espera a que los procesos terminen, para poder reemplazar los archivos.
+    Detener-Worker
 
     # Respaldo de la versión instalada, para regresar a ella si la nueva no abre CONTPAQi.
     if ($anterior -and (Test-Path (Join-Path $destino 'Acusa.Sdk.Worker.exe'))) {
@@ -114,7 +139,7 @@ try {
 
     New-Item -ItemType Directory -Force $destino | Out-Null
     foreach ($f in 'Acusa.Worker.Desktop.exe', 'Acusa.Sdk.Worker.exe', 'appsettings.json', 'acusa.ico', 'instalar.ps1', 'servicio.ps1') {
-        Copy-Item (Join-Path $origen $f) $destino -Force
+        Copiar-ConReintentos (Join-Path $origen $f) $destino
     }
 
     & (Join-Path $destino 'servicio.ps1') -Accion Instalar | Out-Null
@@ -142,10 +167,8 @@ try {
     Start-Service AcusaWorker
     $conexion = Esperar-Conexion $desde
     if ($Automatica -and $conexion.Estado -ne 'Conectado' -and (Test-Path (Join-Path $respaldo 'Acusa.Sdk.Worker.exe'))) {
-        Stop-Service AcusaWorker -Force -ErrorAction SilentlyContinue
-        Get-Process -Name 'Acusa.Sdk.Worker' -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Seconds 2
-        Copy-Item (Join-Path $respaldo '*') $destino -Recurse -Force -Exclude 'version.txt'
+        Detener-Worker
+        foreach ($f in Get-ChildItem $respaldo -File | Where-Object { $_.Name -ne 'version.txt' }) { Copiar-ConReintentos $f.FullName $destino }
         New-ItemProperty -Path $claveDes -Name DisplayVersion -Value $anterior -Force | Out-Null
         New-Item -ItemType Directory -Force (Join-Path $datos 'Actualizaciones') | Out-Null
         Add-Content (Join-Path $datos 'Actualizaciones\fallidas.txt') $version -Encoding UTF8
@@ -173,20 +196,27 @@ try {
         'Error' { Mostrar-Mensaje "$resumen`nCONTPAQi: NO se pudo conectar.`n`n$($conexion.Detalle)`n`nPuede volver a la versión anterior ejecutando su instalador; la configuración se conserva." 'Warning' }
         default { Mostrar-Mensaje "$resumen`nCONTPAQi: todavía conectando.`n`n$($conexion.Detalle)`n`nAbra Acusa Worker para seguir la bitácora." 'Warning' }
     }
+    if ($appAbierta -and -not $Automatica) { Start-Process (Join-Path $destino 'Acusa.Worker.Desktop.exe') }
 } catch {
     $falla = $_.Exception.Message
-    if ($Automatica) {
-        # Una actualización automática nunca deja el worker apagado: vuelve a la versión anterior y la reinicia.
-        try {
-            if (Test-Path (Join-Path $respaldo 'Acusa.Sdk.Worker.exe')) {
-                Copy-Item (Join-Path $respaldo '*') $destino -Recurse -Force -Exclude 'version.txt'
-                if ($anterior) { New-ItemProperty -Path $claveDes -Name DisplayVersion -Value $anterior -Force | Out-Null }
-            }
+    # Una instalación que falla nunca deja el worker apagado: vuelve a la versión anterior y reinicia el servicio.
+    $restaurada = $false
+    try {
+        if (Test-Path (Join-Path $respaldo 'Acusa.Sdk.Worker.exe')) {
+            Detener-Worker
+            foreach ($f in Get-ChildItem $respaldo -File | Where-Object { $_.Name -ne 'version.txt' }) { Copiar-ConReintentos $f.FullName $destino }
+            if ($anterior) { New-ItemProperty -Path $claveDes -Name DisplayVersion -Value $anterior -Force | Out-Null }
+            $restaurada = $true
+        }
+        if ($Automatica) {
             New-Item -ItemType Directory -Force (Join-Path $datos 'Actualizaciones') | Out-Null
             Add-Content (Join-Path $datos 'Actualizaciones\fallidas.txt') $version -Encoding UTF8
-        } catch { $falla += " / No se pudo restaurar la versión anterior: $($_.Exception.Message)" }
-        Start-Service AcusaWorker -ErrorAction SilentlyContinue
-    }
-    Mostrar-Mensaje "No se pudo completar la instalación de Acusa Worker $version.`n`n$falla" 'Error'
+        }
+    } catch { $falla += " / No se pudo restaurar la versión anterior: $($_.Exception.Message)" }
+    Start-Service AcusaWorker -ErrorAction SilentlyContinue
+    $estado = (Get-Service AcusaWorker -ErrorAction SilentlyContinue).Status
+    $nota = ''
+    if ($restaurada) { $nota = "`n`nSe regresó a la versión $anterior. Servicio AcusaWorker: $estado." }
+    Mostrar-Mensaje "No se pudo completar la instalación de Acusa Worker $version.`n`n$falla$nota" 'Error'
     exit 1
 }

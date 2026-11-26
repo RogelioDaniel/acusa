@@ -161,9 +161,17 @@ public static class ApiRest
         {
             try
             {
-                cuerpo = await http.Request.ReadFromJsonAsync<JsonObject>(http.RequestAborted);
+                using var lector = new StreamReader(http.Request.Body, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true));
+                var texto = await lector.ReadToEndAsync(http.RequestAborted);
+                var nodo = JsonNode.Parse(texto);
+                if (nodo is not null and not JsonObject)
+                {
+                    return Errores.Json(400, "El cuerpo no es un objeto JSON válido.");
+                }
+
+                cuerpo = nodo as JsonObject;
             }
-            catch (Exception excepcion) when (excepcion is JsonException or InvalidOperationException or BadHttpRequestException)
+            catch (Exception excepcion) when (excepcion is JsonException or DecoderFallbackException or InvalidOperationException or BadHttpRequestException)
             {
                 return Errores.Json(400, "El cuerpo no es un objeto JSON válido.");
             }

@@ -1,5 +1,13 @@
 # Changelog
 
+## Worker 1.3.0
+
+- Acusa Worker no se abre dos veces en el mismo servidor: la segunda vez muestra la ventana que ya estaba abierta y avisa.
+- El instalador espera a que el servicio y la app terminen antes de reemplazar los archivos y reintenta la copia si siguen ocupados.
+  Si la instalación falla, regresa a la versión anterior y vuelve a iniciar el servicio. Si la app estaba abierta, la vuelve a abrir.
+- La app reporta la versión 1.3.0 (antes se quedaba en 1.2.0 aunque se actualizara).
+- Central responde `400` (no `500`) a un cuerpo que no es UTF-8 válido o que no es un objeto JSON.
+
 ## Sin publicar
 
 - API REST con identificadores de Acusa: los clientes, productos y documentos se crean dentro de la empresa y se consultan, actualizan,

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Acusa.Contrato;
@@ -180,6 +181,29 @@ public sealed class ApiRestTests : IDisposable
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
         Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("Pais"));
+    }
+
+    [Fact]
+    public async Task CrearCliente_CuerpoConUtf8Invalido_Responde400()
+    {
+        var bytes = Encoding.Latin1.GetBytes("{\"codigo\":\"CLI1\",\"razonSocial\":\"X\",\"rfc\":\"XAXX010101000\",\"codigoPostal\":\"06600\",\"pais\":\"México\"}");
+        using var contenido = new ByteArrayContent(bytes);
+        contenido.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        var respuesta = await _http.PostAsync("/api/empresas/EMPRESA1/clientes/crear", contenido);
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+        Assert.Empty(_worker.Ordenes);
+    }
+
+    [Fact]
+    public async Task CrearCliente_CuerpoQueNoEsObjeto_Responde400()
+    {
+        using var contenido = new StringContent("[1,2]", Encoding.UTF8, "application/json");
+
+        var respuesta = await _http.PostAsync("/api/empresas/EMPRESA1/clientes/crear", contenido);
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
     }
 
     [Fact]

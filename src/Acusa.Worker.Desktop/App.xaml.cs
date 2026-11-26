@@ -14,6 +14,12 @@ public partial class App : System.Windows.Application
 
     private System.Threading.Mutex? _ventanaUnica;
 
+    private const string NombreAvisoMostrar = @"Global\Acusa.Worker.Desktop.Mostrar";
+
+    private System.Threading.EventWaitHandle? _avisoMostrar;
+
+    private MainWindow? _ventana;
+
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -33,8 +39,25 @@ public partial class App : System.Windows.Application
         {
             _ventanaUnica?.Dispose();
             _ventanaUnica = null;
+            var mostrada = false;
+            try
+            {
+                using var avisoExistente = System.Threading.EventWaitHandle.OpenExisting(NombreAvisoMostrar);
+                mostrada = avisoExistente.Set();
+            }
+            catch (Exception excepcion) when (excepcion is System.Threading.WaitHandleCannotBeOpenedException or UnauthorizedAccessException)
+            {
+                mostrada = false;
+            }
+
+            var mensaje = "Acusa Worker ya está abierto en este servidor.";
+            if (mostrada)
+            {
+                mensaje = "Acusa Worker ya está abierto en este servidor. Se mostró la ventana que ya estaba abierta.";
+            }
+
             System.Windows.MessageBox.Show(
-                "Acusa Worker ya está abierto en este servidor. Use la ventana que ya está abierta.",
+                mensaje,
                 "Acusa Worker",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Information);
@@ -86,7 +109,31 @@ public partial class App : System.Windows.Application
         }
 
         var ventana = new MainWindow(!puedeControlar, aviso, iniciarServicio);
+        _ventana = ventana;
+        EscucharAvisoMostrar();
         if (!automatico || !puedeControlar) ventana.Show();
+    }
+
+    private void EscucharAvisoMostrar()
+    {
+        try
+        {
+            _avisoMostrar = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.AutoReset, NombreAvisoMostrar);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var escucha = new System.Threading.Thread(() =>
+        {
+            while (_avisoMostrar!.WaitOne())
+            {
+                Dispatcher.Invoke(() => _ventana?.Mostrar());
+            }
+        })
+        { IsBackground = true, Name = "Acusa.Desktop.Mostrar" };
+        escucha.Start();
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)

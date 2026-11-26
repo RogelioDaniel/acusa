@@ -35,7 +35,7 @@ public sealed class OpcionesOrquestador
 public sealed class ClienteOrquestador(HttpClient http, IOptions<OpcionesOrquestador> opciones)
 {
     /// <summary>Versión que se informa al portal.</summary>
-    public const string VersionWorker = "1.2.0";
+    public const string VersionWorker = "1.3.0";
 
     private string? _token;
     private DateTimeOffset _vence;
