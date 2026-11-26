@@ -356,6 +356,7 @@ function recordar(metodo, ruta, cuerpoTexto, res) {
     if (doc.folio != null && doc.concepto != null) { memoria.set("concepto", String(doc.concepto)); memoria.set("serie", doc.serie ? String(doc.serie) : "-"); memoria.set("folio", String(doc.folio)); }
     const recurso = /\/clientes/.test(ruta) ? "idCliente" : /\/productos/.test(ruta) ? "idProducto" : /\/documentos/.test(ruta) ? "idDocumento" : null;
     if (recurso && j && j.id != null) memoria.set(recurso, String(j.id));
+    if (j && typeof j.tareaId === "string") memoria.set("tareaId", j.tareaId);
   } catch { /* respuesta de texto */ }
   if (metodo === "POST" && /\/(clientes|productos)\/crear$/.test(ruta)) {
     try { const c = JSON.parse(cuerpoTexto); if (c.codigo) memoria.set(/\/clientes\/crear$/.test(ruta) ? "codigoCliente" : "codigoProducto", c.codigo); } catch { /* sin cuerpo */ }
@@ -498,6 +499,7 @@ const SECCIONES = [
   { id: "facturas", titulo: "Facturas", descripcion: "Creación y consulta de documentos, individuales o por lote.", filtro: (o) => o.tag === "Documentos" && !/timbrar|descargar|cancelar/.test(o.ruta) },
   { id: "timbrado", titulo: "Timbrado y archivos", descripcion: "Timbrado con XML en texto plano, XML y PDF.", filtro: (o) => o.tag === "Documentos" && /timbrar|descargar/.test(o.ruta) },
   { id: "cancelacion", titulo: "Cancelación", descripcion: "Cancelación de documentos timbrados, individual o por lote.", filtro: (o) => o.tag === "Documentos" && /cancelar/.test(o.ruta) },
+  { id: "tareas", titulo: "Tareas y empresas", descripcion: "Estado de una tarea, tareas pendientes y empresas registradas.", filtro: (o) => o.tag === "Tareas" || o.tag === "Empresas" },
   { id: "flujo", titulo: "Flujo completo", descripcion: "Cliente, producto, factura, timbrado, XML y cancelación en una sola corrida." },
   { id: "postman", titulo: "Colección de Postman", descripcion: "Cargue una colección y ejecute sus peticiones aquí." },
 ];

@@ -180,6 +180,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/empresa'
       - $ref: '#/components/parameters/idempotencia'
+      - $ref: '#/components/parameters/esperar'
       requestBody:
         required: true
         content:
@@ -223,7 +224,7 @@ paths:
     post:
       tags: [Documentos]
       summary: Timbrar factura
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters: [ { $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/esperar' } ]
       responses:
         '200': { description: 'UUID y XML timbrado.' }
         '202': { $ref: '#/components/responses/EnCurso' }
@@ -307,6 +308,7 @@ components:
     empresa: { name: empresa, in: path, required: true, schema: { type: string, example: adEMPRESA_EJEMPLO } }
     id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
     idempotencia: { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 100 } }
+    esperar: { name: esperar, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30 }, description: 'Segundos de espera (1 a 30)' }
   responses:
     Resultado:
       description: Correcto.
