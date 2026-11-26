@@ -109,6 +109,9 @@ public sealed class ApiRestTests : IDisposable
     private readonly HttpClient _http;
     private readonly Almacen _almacen;
     private readonly string _clienteId;
+    private readonly Dictionary<string, long> _empresas;
+
+    private long Empresa1 => _empresas["EMPRESA1"];
 
     public ApiRestTests()
     {
@@ -125,6 +128,7 @@ public sealed class ApiRestTests : IDisposable
         _clienteId = _almacen.CrearCliente("Cliente de prueba");
         _almacen.AgregarEmpresa(_clienteId, "EMPRESA1");
         _almacen.AgregarEmpresa(_clienteId, "EMPRESA2");
+        _empresas = _almacen.EmpresasConId(_clienteId).ToDictionary(empresa => empresa.Nombre, empresa => empresa.Id);
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _almacen.CrearLlave(_clienteId, Roles.Api, "prueba"));
     }
 
@@ -157,14 +161,14 @@ public sealed class ApiRestTests : IDisposable
 
     private async Task<long> CrearClienteAsync(string codigo = "CLI1", string empresa = "EMPRESA1")
     {
-        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{empresa}/clientes/crear", ClienteNuevo(codigo));
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{_empresas[empresa]}/clientes/crear", ClienteNuevo(codigo));
         Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
         return (await respuesta.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
     }
 
     private async Task<long> CrearDocumentoAsync()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",
@@ -182,9 +186,36 @@ public sealed class ApiRestTests : IDisposable
         (await respuesta.Content.ReadFromJsonAsync<ErrorApi>(new JsonSerializerOptions(JsonSerializerDefaults.Web)))!;
 
     [Fact]
+    public async Task ListarEmpresas_DevuelveElIdDeCadaEmpresa()
+    {
+        var empresas = await _http.GetFromJsonAsync<JsonElement>("/api/empresas/listar");
+
+        var primera = empresas.EnumerateArray().Single(empresa => empresa.GetProperty("nombre").GetString() == "EMPRESA1");
+        Assert.Equal(Empresa1, primera.GetProperty("id").GetInt64());
+    }
+
+    [Fact]
+    public async Task CrearCliente_ConElNombreDeLaEmpresaEnLaRuta_Responde404()
+    {
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", ClienteNuevo());
+
+        Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
+        Assert.Empty(_worker.Ordenes);
+    }
+
+    [Fact]
+    public async Task CrearCliente_ConElIdDeLaEmpresa_MandaLaOrdenAEsaEmpresa()
+    {
+        await CrearClienteAsync("CLI7", "EMPRESA2");
+
+        var creacion = Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.ClienteCrear);
+        Assert.Equal("EMPRESA2", creacion.Empresa);
+    }
+
+    [Fact]
     public async Task CrearCliente_SinPais_Responde422()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600" });
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/clientes/crear", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600" });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
         Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("Pais"));
@@ -197,7 +228,7 @@ public sealed class ApiRestTests : IDisposable
         using var contenido = new ByteArrayContent(bytes);
         contenido.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
-        var respuesta = await _http.PostAsync("/api/empresas/EMPRESA1/clientes/crear", contenido);
+        var respuesta = await _http.PostAsync($"/api/empresas/{Empresa1}/clientes/crear", contenido);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
         Assert.Empty(_worker.Ordenes);
@@ -208,7 +239,7 @@ public sealed class ApiRestTests : IDisposable
     {
         using var contenido = new StringContent("[1,2]", Encoding.UTF8, "application/json");
 
-        var respuesta = await _http.PostAsync("/api/empresas/EMPRESA1/clientes/crear", contenido);
+        var respuesta = await _http.PostAsync($"/api/empresas/{Empresa1}/clientes/crear", contenido);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
     }
@@ -216,7 +247,7 @@ public sealed class ApiRestTests : IDisposable
     [Fact]
     public async Task CrearCliente_ConRegimenYUso_LosGuardaConUnaActualizacion()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600", pais = "México", regimenFiscal = "601", usoCfdi = "G03" });
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/clientes/crear", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600", pais = "México", regimenFiscal = "601", usoCfdi = "G03" });
 
         Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
         var actualizacion = Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.ClienteActualizar);
@@ -230,7 +261,7 @@ public sealed class ApiRestTests : IDisposable
     {
         _worker.TiposSinRespuesta.Add(Operaciones.ClienteCrear);
 
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", ClienteNuevo());
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/clientes/crear", ClienteNuevo());
 
         Assert.Equal(HttpStatusCode.Accepted, respuesta.StatusCode);
         Assert.DoesNotContain(_worker.Ordenes, orden => orden.Tipo == Operaciones.DireccionCrear);
@@ -243,7 +274,7 @@ public sealed class ApiRestTests : IDisposable
         await CrearClienteAsync();
         _worker.TiposSinRespuesta.Add(Operaciones.ClienteActualizar);
 
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",
@@ -309,7 +340,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.GetFromJsonAsync<JsonElement>("/api/empresas/EMPRESA1/clientes/buscar?codigo=CLI1");
+        var respuesta = await _http.GetFromJsonAsync<JsonElement>($"/api/empresas/{Empresa1}/clientes/buscar?codigo=CLI1");
 
         Assert.Equal(id, respuesta.GetProperty("id").GetInt64());
     }
@@ -421,7 +452,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var idProducto = _almacen.RegistrarRecurso(_clienteId, "producto", "EMPRESA2", "PR2");
 
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",
@@ -547,7 +578,7 @@ public sealed class ApiRestTests : IDisposable
     [Fact]
     public async Task CrearCliente_CodigoQueYaExiste_Responde409()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", ClienteNuevo("EXISTE"));
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/clientes/crear", ClienteNuevo("EXISTE"));
 
         Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
         Assert.Equal(CodigosError.Conflicto, (await LeerErrorAsync(respuesta)).Codigo);
@@ -556,7 +587,7 @@ public sealed class ApiRestTests : IDisposable
     [Fact]
     public async Task CrearDocumento_ConReferenciaSinIdempotencyKey_UsaLaReferenciaComoLlave()
     {
-        await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
+        await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",

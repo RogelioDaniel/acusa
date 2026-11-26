@@ -526,12 +526,13 @@ function vistaProbar(raiz) {
     } catch (e) { falla(cuerpo)(e); }
   }
 
-  api("/api/portal/empresas").then((es) => {
-    empresaSel.replaceChildren(...es.map((e) => h("option", { value: e }, e)));
-    const guardada = memoria.get("empresa");
-    empresaSel.value = es.includes(guardada) ? guardada : (es[0] || "");
-    memoria.set("empresa", empresaSel.value);
-    empresaSel.addEventListener("change", () => { memoria.set("empresa", empresaSel.value); mostrar(); });
+  api("/api/empresas/listar").then((es) => {
+    empresaSel.replaceChildren(...es.map((e) => h("option", { value: String(e.id) }, `${e.nombre} (id ${e.id})`)));
+    const elegir = () => { const e = es.find((x) => String(x.id) === empresaSel.value); memoria.set("empresaId", e ? String(e.id) : ""); memoria.set("empresa", e ? e.nombre : ""); };
+    const guardada = es.find((e) => e.nombre === memoria.get("empresa"));
+    empresaSel.value = guardada ? String(guardada.id) : (es[0] ? String(es[0].id) : "");
+    elegir();
+    empresaSel.addEventListener("change", () => { elegir(); mostrar(); });
     pintarPestanas(); mostrar();
   }).catch(falla(cuerpo));
 }
@@ -549,7 +550,7 @@ function flujoCompleto() {
     const ctx = {};
     const hoy = new Date().toISOString().slice(0, 10);
     const sufijo = String(Date.now()).slice(-6);
-    const E = `/api/empresas/${encodeURIComponent(empresa)}`;
+    const E = `/api/empresas/${encodeURIComponent(memoria.get("empresaId"))}`;
     const D = () => `/api/documentos/${ctx.documento}`;
     const llamar = async (m, ruta, c) => { const r = await enviar(m, ruta, c ? JSON.stringify(c) : null); recordar(m, ruta, c ? JSON.stringify(c) : "", r); return { ...r, ruta: `${m} ${ruta}` }; };
     const pasos = [

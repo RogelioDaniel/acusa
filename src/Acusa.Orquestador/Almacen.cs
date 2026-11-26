@@ -418,6 +418,19 @@ public sealed class Almacen
         return r.Read() ? LeerTarea(r) : null;
     }
 
+    public IReadOnlyList<EmpresaAcusa> EmpresasConId(string clienteId)
+    {
+        var empresas = new List<EmpresaAcusa>();
+        foreach (var nombre in EmpresasDelCliente(clienteId))
+        {
+            empresas.Add(new EmpresaAcusa(RegistrarRecurso(clienteId, TipoEmpresa, nombre, nombre), nombre));
+        }
+
+        return empresas;
+    }
+
+    public const string TipoEmpresa = "empresa";
+
     public long RegistrarRecurso(string clienteId, string tipo, string empresa, string clave)
     {
         Ejecutar(
@@ -596,6 +609,8 @@ public sealed record LlaveDto(string Id, string? Nombre, string Rol, string? Pre
 /// <param name="Repetida">La llave ya existía: no se creó una tarea nueva.</param>
 /// <param name="Conflicto">La llave ya se usó con una orden distinta.</param>
 public sealed record RecursoAcusa(long Id, string Tipo, string Empresa, string Clave);
+
+public sealed record EmpresaAcusa(long Id, string Nombre);
 
 public sealed record ResultadoEncolar(string Id, EstadoTarea Estado, bool Repetida, bool Conflicto);
 

@@ -58,10 +58,10 @@ public static class ApiRest
                 return Errores.NoAutorizado();
             }
 
-            return Results.Json(almacen.EmpresasDelCliente(quien.ClienteId));
+            return Results.Json(almacen.EmpresasConId(quien.ClienteId));
         });
 
-        var porEmpresa = aplicacion.MapGroup("/api/empresas/{empresa}");
+        var porEmpresa = aplicacion.MapGroup("/api/empresas/{empresaId:long}");
         RutaDeEmpresa(porEmpresa, "POST", "/clientes/crear", true, CrearClienteAsync);
         RutaDeEmpresa(porEmpresa, "GET", "/clientes/buscar", false, BuscarClienteAsync);
         RutaDeEmpresa(porEmpresa, "POST", "/productos/crear", true, CrearProductoAsync);
@@ -94,15 +94,17 @@ public static class ApiRest
     private static void RutaDeEmpresa(RouteGroupBuilder grupo, string metodo, string patron, bool conCuerpo, Manejo manejo) =>
         grupo.MapMethods(patron, [metodo], (HttpContext http, Almacen almacen, Seguridad seguridad, IEjecutorOrdenes ejecutor, Opciones opciones) =>
         {
-            var empresa = Convert.ToString(http.Request.RouteValues["empresa"], CultureInfo.InvariantCulture) ?? string.Empty;
+            var texto = Convert.ToString(http.Request.RouteValues["empresaId"], CultureInfo.InvariantCulture);
             return AtenderAsync(http, almacen, seguridad, ejecutor, opciones, conCuerpo, manejo, quien =>
             {
-                if (!almacen.EmpresaDelCliente(quien.ClienteId, empresa))
+                if (!long.TryParse(texto, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                    || almacen.BuscarRecurso(quien.ClienteId, Almacen.TipoEmpresa, id) is not { } empresa
+                    || !almacen.EmpresaDelCliente(quien.ClienteId, empresa.Clave))
                 {
-                    return (null, null, Errores.Json(404, $"La empresa '{empresa}' no está registrada para este cliente."));
+                    return (null, null, Errores.Json(404, $"No existe la empresa {texto}."));
                 }
 
-                return (empresa, null, null);
+                return (empresa.Clave, null, null);
             });
         });
 

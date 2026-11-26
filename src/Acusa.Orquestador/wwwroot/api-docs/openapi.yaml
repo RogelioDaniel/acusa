@@ -35,9 +35,9 @@ paths:
       tags: [Empresas]
       summary: Listar empresas
       responses:
-        '200': { description: Empresas registradas. }
+        '200': { description: 'Empresas con su id: [{ id, nombre }].' }
         '401': { $ref: '#/components/responses/Error' }
-  /api/empresas/{empresa}/clientes/crear:
+  /api/empresas/{empresaId}/clientes/crear:
     post:
       tags: [Clientes]
       summary: Crear cliente
@@ -52,7 +52,7 @@ paths:
         '201': { $ref: '#/components/responses/Resultado' }
         '409': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
-  /api/empresas/{empresa}/clientes/buscar:
+  /api/empresas/{empresaId}/clientes/buscar:
     get:
       tags: [Clientes]
       summary: Buscar cliente por código
@@ -125,7 +125,7 @@ paths:
         '200': { $ref: '#/components/responses/Resultado' }
         '404': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
-  /api/empresas/{empresa}/productos/crear:
+  /api/empresas/{empresaId}/productos/crear:
     post:
       tags: [Productos]
       summary: Crear producto
@@ -140,7 +140,7 @@ paths:
         '201': { $ref: '#/components/responses/Resultado' }
         '409': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
-  /api/empresas/{empresa}/productos/buscar:
+  /api/empresas/{empresaId}/productos/buscar:
     get:
       tags: [Productos]
       summary: Buscar producto por código
@@ -173,7 +173,7 @@ paths:
         '200': { $ref: '#/components/responses/Resultado' }
         '404': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
-  /api/empresas/{empresa}/documentos/crear:
+  /api/empresas/{empresaId}/documentos/crear:
     post:
       tags: [Documentos]
       summary: Crear factura
@@ -200,7 +200,7 @@ paths:
         '201': { $ref: '#/components/responses/Resultado' }
         '202': { $ref: '#/components/responses/EnCurso' }
         '422': { $ref: '#/components/responses/Error' }
-  /api/empresas/{empresa}/documentos/buscar:
+  /api/empresas/{empresaId}/documentos/buscar:
     get:
       tags: [Documentos]
       summary: Buscar factura por concepto, serie y folio
@@ -305,7 +305,7 @@ components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
   parameters:
-    empresa: { name: empresa, in: path, required: true, schema: { type: string, example: adEMPRESA_EJEMPLO } }
+    empresa: { name: empresaId, in: path, required: true, schema: { type: integer, format: int64 }, description: 'id de la empresa, de /api/empresas/listar' }
     id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
     idempotencia: { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 100 } }
     esperar: { name: esperar, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30 }, description: 'Segundos de espera (1 a 30)' }

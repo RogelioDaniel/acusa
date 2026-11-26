@@ -106,6 +106,8 @@ public sealed class ErroresApiTests : IDisposable
     private readonly WebApplicationFactory<Acusa.Orquestador.Seguridad> _fabrica;
     private readonly HttpClient _http;
     private readonly string _llave;
+    private readonly long _empresa1;
+    private readonly long _empresaAjena;
 
     public ErroresApiTests()
     {
@@ -119,6 +121,10 @@ public sealed class ErroresApiTests : IDisposable
         var almacen = _fabrica.Services.GetRequiredService<Almacen>();
         var cliente = almacen.CrearCliente("Cliente de prueba");
         almacen.AgregarEmpresa(cliente, "EMPRESA1");
+        _empresa1 = almacen.EmpresasConId(cliente)[0].Id;
+        var otroCliente = almacen.CrearCliente("Otro cliente");
+        almacen.AgregarEmpresa(otroCliente, "AJENA");
+        _empresaAjena = almacen.EmpresasConId(otroCliente)[0].Id;
         _llave = almacen.CrearLlave(cliente, Roles.Api, "prueba");
     }
 
@@ -171,7 +177,7 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task ObtenerCliente_ConIdDeCorrelacionValido_LoConserva()
     {
-        var peticion = Peticion(HttpMethod.Get, "/api/empresas/NOEXISTE/clientes/buscar?codigo=X");
+        var peticion = Peticion(HttpMethod.Get, "/api/empresas/999999/clientes/buscar?codigo=X");
         peticion.Headers.Add(Correlacion.Cabecera, "sistema-cliente-42");
         var respuesta = await _http.SendAsync(peticion);
         var (error, _) = await LeerErrorAsync(respuesta);
@@ -193,18 +199,18 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task ObtenerCliente_EmpresaAjena_Responde404()
     {
-        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, "/api/empresas/AJENA/clientes/buscar?codigo=X"));
+        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Get, $"/api/empresas/{_empresaAjena}/clientes/buscar?codigo=X"));
         var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
         Assert.Equal(CodigosError.NoEncontrado, error.Codigo);
-        Assert.Contains("AJENA", error.Mensaje);
+        Assert.Contains(_empresaAjena.ToString(System.Globalization.CultureInfo.InvariantCulture), error.Mensaje);
     }
 
     [Fact]
     public async Task CrearProducto_CuerpoVacio_Responde422ConUnDetallePorCampo()
     {
-        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos/crear", new { }));
+        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, $"/api/empresas/{_empresa1}/productos/crear", new { }));
         var (error, _) = await LeerErrorAsync(respuesta);
 
         Assert.Equal((HttpStatusCode)422, respuesta.StatusCode);
@@ -217,7 +223,7 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task CrearProducto_CuerpoQueNoEsJson_Responde400()
     {
-        var peticion = Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos/crear");
+        var peticion = Peticion(HttpMethod.Post, $"/api/empresas/{_empresa1}/productos/crear");
         peticion.Content = new StringContent("esto no es json", System.Text.Encoding.UTF8, "application/json");
         var respuesta = await _http.SendAsync(peticion);
         var (error, _) = await LeerErrorAsync(respuesta);
@@ -229,7 +235,7 @@ public sealed class ErroresApiTests : IDisposable
     [Fact]
     public async Task CrearProducto_ContrasenaEnElCuerpo_Responde400SinRepetirla()
     {
-        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, "/api/empresas/EMPRESA1/productos/crear", new { codigo = "P1", password = "claveFalsa" }));
+        var respuesta = await _http.SendAsync(Peticion(HttpMethod.Post, $"/api/empresas/{_empresa1}/productos/crear", new { codigo = "P1", password = "claveFalsa" }));
         var (error, crudo) = await LeerErrorAsync(respuesta);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);

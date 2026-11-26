@@ -13,6 +13,9 @@
 
 ## Sin publicar
 
+- La empresa también va por `id`: `GET /api/empresas/listar` devuelve `[{ id, nombre }]` y las rutas son `/api/empresas/{empresaId}/…`.
+  El nombre de la empresa en la ruta responde `404`.
+
 - API REST con identificadores de Acusa: los clientes, productos y documentos se crean dentro de la empresa y se consultan, actualizan,
   timbran y cancelan con su `id` (`/api/clientes/{id}`, `/api/productos/{id}`, `/api/documentos/{id}`), sin repetir la empresa. Búsqueda
   por código (o concepto, serie y folio) para registros que ya existían.

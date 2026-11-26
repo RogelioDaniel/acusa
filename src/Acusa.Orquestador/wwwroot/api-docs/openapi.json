@@ -66,7 +66,7 @@
         "summary": "Listar empresas",
         "responses": {
           "200": {
-            "description": "Empresas registradas."
+            "description": "Empresas con su id: [{ id, nombre }]."
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -74,7 +74,7 @@
         }
       }
     },
-    "/api/empresas/{empresa}/clientes/crear": {
+    "/api/empresas/{empresaId}/clientes/crear": {
       "post": {
         "tags": [
           "Clientes"
@@ -118,7 +118,7 @@
         }
       }
     },
-    "/api/empresas/{empresa}/clientes/buscar": {
+    "/api/empresas/{empresaId}/clientes/buscar": {
       "get": {
         "tags": [
           "Clientes"
@@ -320,7 +320,7 @@
         }
       }
     },
-    "/api/empresas/{empresa}/productos/crear": {
+    "/api/empresas/{empresaId}/productos/crear": {
       "post": {
         "tags": [
           "Productos"
@@ -362,7 +362,7 @@
         }
       }
     },
-    "/api/empresas/{empresa}/productos/buscar": {
+    "/api/empresas/{empresaId}/productos/buscar": {
       "get": {
         "tags": [
           "Productos"
@@ -450,7 +450,7 @@
         }
       }
     },
-    "/api/empresas/{empresa}/documentos/crear": {
+    "/api/empresas/{empresaId}/documentos/crear": {
       "post": {
         "tags": [
           "Documentos"
@@ -507,7 +507,7 @@
         }
       }
     },
-    "/api/empresas/{empresa}/documentos/buscar": {
+    "/api/empresas/{empresaId}/documentos/buscar": {
       "get": {
         "tags": [
           "Documentos"
@@ -795,13 +795,14 @@
     },
     "parameters": {
       "empresa": {
-        "name": "empresa",
+        "name": "empresaId",
         "in": "path",
         "required": true,
         "schema": {
-          "type": "string",
-          "example": "adEMPRESA_EJEMPLO"
-        }
+          "type": "integer",
+          "format": "int64"
+        },
+        "description": "id de la empresa, de /api/empresas/listar"
       },
       "id": {
         "name": "id",

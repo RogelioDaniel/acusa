@@ -34,16 +34,16 @@ dotnet test Acusa.Sdk.slnx
 ## API
 
 La definición completa está en `src/Acusa.Orquestador/wwwroot/api-docs/openapi.yaml` y se publica con Swagger UI en `/api-docs`.
-Los clientes, productos y documentos se crean dentro de una empresa (`/api/empresas/{empresa}/…`) y la respuesta trae su `id` de
+Los clientes, productos y documentos se crean dentro de una empresa (`/api/empresas/{empresaId}/…`) y la respuesta trae su `id` de
 Acusa; el resto de las operaciones usan ese `id` sin repetir la empresa.
 
 | Recurso | Rutas |
 |---|---|
 | Empresas | `GET /api/empresas/listar` |
-| Clientes | `POST /api/empresas/{empresa}/clientes/crear`, `GET …/clientes/buscar?codigo=`, `GET /api/clientes/{id}/consultar`, `PATCH /api/clientes/{id}/actualizar` |
+| Clientes | `POST /api/empresas/{empresaId}/clientes/crear`, `GET …/clientes/buscar?codigo=`, `GET /api/clientes/{id}/consultar`, `PATCH /api/clientes/{id}/actualizar` |
 | Direcciones | `GET /api/clientes/{id}/direcciones/consultar`, `POST …/direcciones/crear`, `PATCH …/direcciones/actualizar` (`tipoDireccion` 0 fiscal, 1 envío) |
-| Productos | `POST /api/empresas/{empresa}/productos/crear`, `GET …/productos/buscar?codigo=`, `GET /api/productos/{id}/consultar`, `PATCH /api/productos/{id}/actualizar` |
-| Documentos | `POST /api/empresas/{empresa}/documentos/crear`, `GET …/documentos/buscar`, `GET /api/documentos/{id}/consultar` |
+| Productos | `POST /api/empresas/{empresaId}/productos/crear`, `GET …/productos/buscar?codigo=`, `GET /api/productos/{id}/consultar`, `PATCH /api/productos/{id}/actualizar` |
+| Documentos | `POST /api/empresas/{empresaId}/documentos/crear`, `GET …/documentos/buscar`, `GET /api/documentos/{id}/consultar` |
 | Timbrado y cancelación | `POST /api/documentos/{id}/timbrar`, `POST /api/documentos/{id}/cancelar`, `POST /api/documentos/timbrar` y `/cancelar` (varios) |
 | Archivos | `GET /api/documentos/{id}/descargar-xml`, `…/descargar-pdf` |
 | Tareas | `GET /api/tareas/{tareaId}/consultar`, `GET /api/tareas/pendientes` |

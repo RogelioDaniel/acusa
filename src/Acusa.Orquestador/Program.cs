@@ -46,6 +46,7 @@ if (almacen.ContarUsuarios() == 0 && !string.IsNullOrWhiteSpace(config.CorreoIni
     // Hosting sin disco (Render Free): cada despliegue empieza con la base vacía. Estas variables, todas opcionales, la dejan
     // igual de lista que antes: empresas, llaves con el mismo valor y más usuarios del portal. Quedan en el panel del proveedor.
     foreach (var e in config.EmpresasIniciales.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) almacen.AgregarEmpresa(cliente, e);
+    almacen.EmpresasConId(cliente);
     // Cada variable admite varias llaves separadas por coma o punto y coma (útil para cambiar de llave sin perder a quien aún usa la anterior).
     var llavesApi = config.LlaveApiInicial.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(l => l.StartsWith("ak_") && l.Length >= 30).Distinct().ToList();
     for (var i = 0; i < llavesApi.Count; i++) almacen.CrearLlaveConocida(cliente, Roles.Api, llavesApi[i], llavesApi.Count == 1 ? "Sistema cliente" : $"Sistema cliente {i + 1}");
