@@ -74,8 +74,12 @@ public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opcio
         }
         else
         {
-            id = almacen.EncolarTarea(clienteId, empresa, tipo, json, PeticionActual.Texto);
-            notificador.TareaEncolada();
+            var encolada = almacen.EncolarSinDuplicar(clienteId, empresa, tipo, json, PeticionActual.Texto);
+            id = encolada.Id;
+            if (!encolada.Repetida)
+            {
+                notificador.TareaEncolada();
+            }
         }
 
         return (id, null);

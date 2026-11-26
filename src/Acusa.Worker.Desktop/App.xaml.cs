@@ -10,10 +10,37 @@ public partial class App : System.Windows.Application
     /// <summary>Nombre global: vale para todo el servidor, no solo para la sesión de Windows de quien lo abre.</summary>
     private const string NombreMutex = @"Global\Acusa.Worker.Desktop.Control";
 
+    private const string NombreMutexVentana = @"Global\Acusa.Worker.Desktop.Ventana";
+
+    private System.Threading.Mutex? _ventanaUnica;
+
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
         base.OnStartup(e);
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
+
+        var ventanaLibre = false;
+        try
+        {
+            _ventanaUnica = new System.Threading.Mutex(true, NombreMutexVentana, out ventanaLibre);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ventanaLibre = false;
+        }
+
+        if (!ventanaLibre)
+        {
+            _ventanaUnica?.Dispose();
+            _ventanaUnica = null;
+            System.Windows.MessageBox.Show(
+                "Acusa Worker ya está abierto en este servidor. Use la ventana que ya está abierta.",
+                "Acusa Worker",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
         var automatico = e.Args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
         var cfg = Config.Cargar();
         var puedeControlar = Acceso.PuedeControlar(cfg);
@@ -66,6 +93,8 @@ public partial class App : System.Windows.Application
     {
         try { _unico?.ReleaseMutex(); } catch { }
         _unico?.Dispose();
+        try { _ventanaUnica?.ReleaseMutex(); } catch { }
+        _ventanaUnica?.Dispose();
         base.OnExit(e);
     }
 }

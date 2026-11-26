@@ -59,6 +59,7 @@ public sealed class Almacen
                 id INTEGER PRIMARY KEY AUTOINCREMENT, cliente_id TEXT NOT NULL, tipo TEXT NOT NULL, empresa TEXT NOT NULL COLLATE NOCASE,
                 clave TEXT NOT NULL, creado TEXT NOT NULL);
             CREATE UNIQUE INDEX IF NOT EXISTS ux_recursos ON recursos (cliente_id, tipo, empresa, clave);
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_tareas_activas ON tareas (cliente_id, huella) WHERE llave IS NULL AND huella IS NOT NULL AND estado IN (0, 1);
             """);
     }
 
@@ -259,6 +260,48 @@ public sealed class Almacen
             ("$id", llaveId)) > 0;
 
     // ---- Cola -----------------------------------------------------------------------------
+
+    public ResultadoEncolar EncolarSinDuplicar(string clienteId, string empresa, string tipo, string payload, string? peticion = null)
+    {
+        var huella = Huella(empresa, tipo, payload);
+        for (var intento = 0; intento < 3; intento++)
+        {
+            if (BuscarTareaActiva(clienteId, huella) is { } activa)
+            {
+                return new ResultadoEncolar(activa.Id, activa.Estado, Repetida: true, Conflicto: false);
+            }
+
+            var id = Guid.NewGuid().ToString("N");
+            try
+            {
+                Ejecutar(
+                    "INSERT INTO tareas (id, cliente_id, empresa, tipo, payload, estado, creada, huella, peticion) VALUES ($id, $c, $e, $t, $p, 0, $ahora, $h, $pe)",
+                    ("$id", id), ("$c", clienteId), ("$e", empresa), ("$t", tipo), ("$p", payload), ("$ahora", Ahora()), ("$h", huella), ("$pe", (object?)peticion ?? DBNull.Value));
+                return new ResultadoEncolar(id, EstadoTarea.Pendiente, Repetida: false, Conflicto: false);
+            }
+            catch (SqliteException excepcion) when (excepcion.SqliteErrorCode == 19)
+            {
+            }
+        }
+
+        throw new InvalidOperationException("No se pudo encolar la orden.");
+    }
+
+    private (string Id, EstadoTarea Estado)? BuscarTareaActiva(string clienteId, string huella)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(
+            conexion,
+            "SELECT id, estado FROM tareas WHERE cliente_id=$c AND huella=$h AND llave IS NULL AND estado IN (0, 1) LIMIT 1",
+            ("$c", clienteId), ("$h", huella));
+        using var lector = comando.ExecuteReader();
+        if (!lector.Read())
+        {
+            return null;
+        }
+
+        return (lector.GetString(0), (EstadoTarea)lector.GetInt32(1));
+    }
 
     public string EncolarTarea(string clienteId, string empresa, string tipo, string payload, string? peticion = null)
     {

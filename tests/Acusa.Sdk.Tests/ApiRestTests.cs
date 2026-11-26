@@ -16,7 +16,7 @@ namespace Acusa.Sdk.Tests;
 
 public sealed class ApiRestTests : IDisposable
 {
-    private sealed record Orden(string Empresa, string Tipo, JsonElement Payload, bool Encolada);
+    private sealed record Orden(string Empresa, string Tipo, JsonElement Payload, bool Encolada, string? Llave = null);
 
     private sealed class WorkerSimulado : IEjecutorOrdenes
     {
@@ -42,7 +42,7 @@ public sealed class ApiRestTests : IDisposable
             lock (_candado)
             {
                 var datos = JsonSerializer.SerializeToElement(payload);
-                Ordenes.Add(new Orden(empresa, tipo, datos, false));
+                Ordenes.Add(new Orden(empresa, tipo, datos, false, llave));
                 _tareas++;
                 var tareaId = $"tarea{_tareas}";
                 return Task.FromResult(Responder(tipo, datos, tareaId));
@@ -67,6 +67,11 @@ public sealed class ApiRestTests : IDisposable
                 var direccion = JsonNode.Parse(datos.GetRawText())!.AsObject();
                 Direcciones[(direccion["codigoCliente"]!.GetValue<string>(), direccion["tipo"]!.GetValue<int>())] = direccion;
                 return Correcto(datos, tareaId);
+            }
+
+            if (tipo == Operaciones.ClienteCrear && datos.GetProperty("codigo").GetString() == "EXISTE")
+            {
+                return new ResultadoOrden(false, null, "Ya existe el cliente EXISTE.", null, false, tareaId);
             }
 
             if (tipo == Operaciones.DocumentoCrear)
@@ -403,8 +408,9 @@ public sealed class ApiRestTests : IDisposable
     public async Task TimbrarVarios_DocumentosValidos_Responde202SinEsperarYUnaTareaPorDocumento()
     {
         var id = await CrearDocumentoAsync();
+        var otroId = _almacen.RegistrarRecurso(_clienteId, "documento", "EMPRESA1", "5|A|8");
 
-        var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = new[] { id, id } });
+        var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = new[] { id, otroId } });
 
         Assert.Equal(HttpStatusCode.Accepted, respuesta.StatusCode);
         var cuerpo = await respuesta.Content.ReadFromJsonAsync<JsonElement>();
@@ -450,5 +456,78 @@ public sealed class ApiRestTests : IDisposable
         var tareas = await _http.GetFromJsonAsync<JsonElement>("/api/sdk/tasks/pendientes");
 
         Assert.Equal(1, tareas.GetArrayLength());
+    }
+    [Fact]
+    public async Task TimbrarVarios_DocumentoRepetidoEnLaLista_Responde422SinEncolar()
+    {
+        var id = await CrearDocumentoAsync();
+
+        var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = new[] { id, id } });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
+        Assert.DoesNotContain(_worker.Ordenes, orden => orden.Encolada);
+    }
+
+    [Fact]
+    public async Task CrearCliente_CodigoQueYaExiste_Responde409()
+    {
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes", ClienteNuevo("EXISTE"));
+
+        Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
+        Assert.Equal(CodigosError.Conflicto, (await LeerErrorAsync(respuesta)).Codigo);
+    }
+
+    [Fact]
+    public async Task CrearDocumento_ConReferenciaSinIdempotencyKey_UsaLaReferenciaComoLlave()
+    {
+        await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos", new
+        {
+            concepto = "5",
+            clienteCodigo = "CLI1",
+            fecha = "2026-11-25",
+            formaPago = "01",
+            usoCfdi = "G03",
+            regimenFiscal = "601",
+            referencia = "FAC-0001",
+            movimientos = new[] { new { productoCodigo = "PR1", unidades = 1, precio = 10 } },
+        });
+
+        var creacion = Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.DocumentoCrear);
+        Assert.Equal("referencia:EMPRESA1:FAC-0001:documento", creacion.Llave);
+    }
+
+    [Fact]
+    public async Task CrearDireccion_ConTipoDireccion_AceptaElNombreDeMontek()
+    {
+        var id = await CrearClienteAsync();
+
+        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones", new { tipoDireccion = 1, codigoPostal = "42501", pais = "México" });
+
+        Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
+        Assert.True(_worker.Direcciones.ContainsKey(("CLI1", 1)));
+    }
+
+    [Fact]
+    public void EncolarSinDuplicar_MismaOrdenPendiente_DevuelveLaMismaTarea()
+    {
+        var primera = _almacen.EncolarSinDuplicar(_clienteId, "EMPRESA1", Operaciones.DocumentoEmitir, """{"folio":1}""");
+
+        var segunda = _almacen.EncolarSinDuplicar(_clienteId, "EMPRESA1", Operaciones.DocumentoEmitir, """{ "folio": 1 }""");
+
+        Assert.Equal(primera.Id, segunda.Id);
+        Assert.True(segunda.Repetida);
+    }
+
+    [Fact]
+    public void EncolarSinDuplicar_MismaOrdenYaTerminada_CreaOtraTarea()
+    {
+        var primera = _almacen.EncolarSinDuplicar(_clienteId, "EMPRESA1", Operaciones.DocumentoEmitir, """{"folio":2}""");
+        var tomada = _almacen.TomarTarea(_clienteId, "EMPRESA1", "worker1");
+        _almacen.RegistrarResultado(_clienteId, tomada!.Id, "worker1", new ResultadoTarea(true, null, null, null));
+
+        var segunda = _almacen.EncolarSinDuplicar(_clienteId, "EMPRESA1", Operaciones.DocumentoEmitir, """{"folio":2}""");
+
+        Assert.NotEqual(primera.Id, segunda.Id);
+        Assert.False(segunda.Repetida);
     }
 }

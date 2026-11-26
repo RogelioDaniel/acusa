@@ -212,6 +212,11 @@ public static class ApiRest
             return EnProceso(contexto, resultado.TareaId, id);
         }
 
+        if (resultado.CodigoSdk is null && resultado.Error is { } error && error.StartsWith("Ya existe", StringComparison.OrdinalIgnoreCase))
+        {
+            return Errores.Json(409, error, codigo: CodigosError.Conflicto, tareaId: resultado.TareaId);
+        }
+
         return Errores.DeTareaJson(resultado.Error, resultado.CodigoSdk, resultado.TareaId);
     }
 
@@ -306,7 +311,12 @@ public static class ApiRest
     {
         var codigo = contexto.Recurso!.Clave;
         var tipos = new List<int> { DireccionFiscal, DireccionEnvio };
-        var tipoPedido = contexto.Consulta("tipo");
+        var tipoPedido = contexto.Consulta("tipoDireccion");
+        if (tipoPedido.Length == 0)
+        {
+            tipoPedido = contexto.Consulta("tipo");
+        }
+
         if (tipoPedido.Length > 0)
         {
             if (!TipoDireccionValido(tipoPedido, out var tipoFiltrado))
@@ -575,6 +585,10 @@ public static class ApiRest
         if (Texto(cuerpo["referencia"]) is { Length: > 0 } referenciaPedida)
         {
             referencia = referenciaPedida.Trim();
+            if (contexto.Llave is null)
+            {
+                contexto = contexto with { Llave = $"referencia:{contexto.Empresa}:{referencia}" };
+            }
         }
 
         string? serie = null;
@@ -746,6 +760,7 @@ public static class ApiRest
         }
 
         var pedidos = new List<(RecursoAcusa Recurso, string? Motivo, string? UuidSustituto)>();
+        var vistos = new HashSet<long>();
         for (var indice = 0; indice < elementos.Count; indice++)
         {
             var elemento = elementos[indice];
@@ -763,6 +778,12 @@ public static class ApiRest
                 || !contexto.Almacen.EmpresaDelCliente(contexto.Quien.ClienteId, recurso.Empresa))
             {
                 errores.Add($"{etiqueta}: no existe el documento {idTexto}");
+                continue;
+            }
+
+            if (!vistos.Add(id))
+            {
+                errores.Add($"{etiqueta}: el documento {id} está repetido en la lista");
                 continue;
             }
 
@@ -971,12 +992,13 @@ public static class ApiRest
 
     private static int LeerTipoDireccion(JsonObject cuerpo, List<string> errores)
     {
-        if (cuerpo["tipo"] is null)
+        var valor = cuerpo["tipoDireccion"] ?? cuerpo["tipo"];
+        if (valor is null)
         {
             return DireccionFiscal;
         }
 
-        if (!TipoDireccionValido(Texto(cuerpo["tipo"]), out var tipo))
+        if (!TipoDireccionValido(Texto(valor), out var tipo))
         {
             errores.Add("Tipo de dirección debe ser 0 (fiscal) o 1 (envío)");
         }
