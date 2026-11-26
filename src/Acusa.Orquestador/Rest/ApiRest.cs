@@ -807,7 +807,7 @@ public static class ApiRest
     {
         var elementos = contexto.Cuerpo!["documentos"] as JsonArray ?? [];
         var errores = new List<string>();
-        var maximo = Math.Max(1, contexto.Opciones.MaximoDocumentosPorLote);
+        var maximo = Math.Max(1, contexto.Almacen.LeerAjusteEntero(contexto.Quien.ClienteId, Almacen.AjusteMaximoPorLote) ?? contexto.Opciones.MaximoDocumentosPorLote);
         if (elementos.Count == 0 || elementos.Count > maximo)
         {
             errores.Add($"Documentos: se envían entre 1 y {maximo}");

@@ -529,7 +529,7 @@ function vistaProbar(raiz) {
   api("/api/empresas/listar").then((es) => {
     empresaSel.replaceChildren(...es.map((e) => h("option", { value: String(e.id) }, `${e.nombre} (id ${e.id})`)));
     const elegir = () => { const e = es.find((x) => String(x.id) === empresaSel.value); memoria.set("empresaId", e ? String(e.id) : ""); memoria.set("empresa", e ? e.nombre : ""); };
-    const guardada = es.find((e) => e.nombre === memoria.get("empresa"));
+    const guardada = es.find((e) => e.nombre === memoria.get("empresa")) || es.find((e) => /PRUEBA/i.test(e.nombre));
     empresaSel.value = guardada ? String(guardada.id) : (es[0] ? String(es[0].id) : "");
     elegir();
     empresaSel.addEventListener("change", () => { elegir(); mostrar(); });
@@ -673,7 +673,16 @@ function vistaConfig(raiz) {
     } catch (e) { falla(lista)(e); }
   }
 
+  const maximo = h("input", { type: "number", min: "1", max: "5000", required: true, "aria-label": "Máximo de documentos por lote" });
+  const lote = h("form", { class: "fila-acciones", onsubmit: async (e) => {
+    e.preventDefault();
+    try { await api("/api/portal/ajustes/lote", { method: "PUT", body: JSON.stringify({ maximo: Number(maximo.value) }) }); aviso("Máximo por lote guardado"); }
+    catch (err) { aviso(err.message); }
+  } }, h("label", { class: "campo" }, h("span", null, "Máximo de documentos por lote"), maximo), h("button", { class: "boton", type: "submit", style: "margin-bottom:12px" }, "Guardar"));
+  api("/api/portal/ajustes/lote").then((a) => { maximo.value = a.maximo; }).catch(() => {});
+
   raiz.append(encabezado("Configuración", `Su cuenta (${u.email || "—"}) y las empresas que atiende ${PRODUCTO}.`),
+    h("div", { class: "tarjeta", style: "max-width:460px" }, h("h2", null, "Timbrado y cancelación por lote"), h("p", { class: "sub" }, "Cuántas facturas acepta una sola petición de timbrar o cancelar varias."), lote),
     h("div", { class: "tarjeta" }, h("h2", null, "Empresas"), h("p", { class: "sub" }, "Un worker solo atiende empresas registradas aquí. El nombre es el de la carpeta de la empresa en CONTPAQi."), alta, lista),
     h("div", { class: "tarjeta", style: "max-width:460px" }, h("h2", null, "Cambiar contraseña"), clave));
   cargar();
