@@ -3,24 +3,15 @@ info:
   title: Acusa · API de facturación
   version: v1
   description: |
-    API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial: clientes (con sus direcciones), productos y documentos, con su timbrado individual o de varios documentos, sus archivos y su cancelación.
+    Facturación electrónica sobre CONTPAQi Comercial.
 
-    **Identificadores.** Los clientes, productos y documentos se crean dentro de una empresa (`/api/empresas/{empresa}/…`) y la respuesta trae su `id` de Acusa. Las demás operaciones usan ese `id` sin repetir la empresa: `/api/clientes/{id}`, `/api/productos/{id}`, `/api/documentos/{id}`. Para un registro que ya existía en Comercial, búsquelo por código (`GET /api/empresas/{empresa}/clientes?codigo=…`) y la respuesta trae su `id`.
-
-    **Autenticación.** Envíe su llave de API (empieza con `ak_`) en la cabecera `Authorization: Bearer <llave>`. También puede cambiarla por un token de una hora con `POST /api/auth/token` (cabecera `x-api-key`). Para probar aquí, pegue la llave arriba y pulse «Obtener token».
-
-    **Flujo de una factura.** `POST /api/empresas/{empresa}/clientes` → `POST /api/empresas/{empresa}/productos` → `POST /api/empresas/{empresa}/documentos` → `POST /api/documentos/{id}/timbrar` (devuelve el UUID y el XML en texto plano) → `GET /api/documentos/{id}/xml` y `…/pdf` → `POST /api/documentos/{id}/cancelar` si hace falta.
-
-    **Respuesta.** Cada petición espera al worker hasta 30 segundos (`?esperar=N` la reduce). Si responde, la misma respuesta trae el resultado (`200` o `201`); si falla en Comercial, `422` con el error; si pasa el tiempo, `202` con el identificador de la tarea, que se consulta en `GET /api/sdk/tasks/{tareaId}`. El timbrado y la cancelación de varios documentos responden `202` de inmediato, con una tarea por documento; `GET /api/sdk/tasks/pendientes` lista las que siguen en proceso.
-
-    **Errores.** Toda respuesta de error tiene el mismo cuerpo: `{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }`. `codigo` es estable para programar contra él (`solicitud_invalida`, `no_autorizado`, `no_encontrado`, `conflicto`, `validacion`, `operacion_fallida`, `error_sdk`, `demasiados_intentos`, `error_interno`); `mensaje` es el texto para la persona; `detalles` lista cada validación que falló. Cuando CONTPAQi Comercial rechaza la operación, `codigo` es `error_sdk`, `codigoSdk` trae el código del SDK, `mensaje` lo explica y `detalles` conserva el texto original del SDK. Cada respuesta incluye la cabecera `X-Correlation-Id`, igual a `idCorrelacion`.
-
-    **Reintentos.** Con la cabecera `Idempotency-Key` (hasta 100 caracteres), repetir una petición de escritura devuelve el resultado original y no duplica el documento.
-
-    Las operaciones requieren un Acusa Worker en línea. La contraseña del certificado vive en el worker y nunca viaja en las peticiones.
+    - **Autenticación:** `Authorization: Bearer <llave de API>`.
+    - **Identificadores:** al crear o buscar se recibe un `id`; las demás rutas lo usan.
+    - **Respuesta:** hasta 30 s de espera; después `202` con `tareaId`.
+    - **Errores:** `{ codigo, mensaje, detalles, idCorrelacion }`.
+    - **Duplicados:** `Idempotency-Key` o `referencia` evitan crear dos veces la misma factura.
 servers:
 - url: /
-  description: Este servidor
 tags:
 - name: Autenticación
 - name: Empresas
@@ -35,209 +26,160 @@ paths:
       summary: Obtener un token de una hora
       security: []
       parameters:
-      - name: x-api-key
-        in: header
-        required: true
-        schema: { type: string }
-        description: Su llave de API (`ak_…`).
+      - { name: x-api-key, in: header, required: true, schema: { type: string } }
       responses:
-        '200':
-          description: Token.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token: { type: string }
-                  expiraEnSegundos: { type: integer, example: 3600 }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-  /api/empresas:
+        '200': { description: Token. }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/empresas/listar:
     get:
       tags: [Empresas]
-      summary: Listar las empresas de CONTPAQi registradas
+      summary: Listar empresas
       responses:
-        '200':
-          description: Nombres de empresa (carpeta de la empresa en CONTPAQi).
-          content:
-            application/json:
-              schema: { type: array, items: { type: string }, example: [adEMPRESA_EJEMPLO] }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-  /api/empresas/{empresa}/clientes:
-    parameters:
-    - $ref: '#/components/parameters/empresa'
+        '200': { description: Empresas registradas. }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/empresas/{empresa}/clientes/crear:
     post:
       tags: [Clientes]
-      summary: Crear un cliente
-      description: Crea el cliente y guarda su dirección fiscal. El código postal y el país son obligatorios; el resto de la dirección es opcional. La respuesta trae el `id` del cliente.
+      summary: Crear cliente
+      parameters: [ { $ref: '#/components/parameters/empresa' } ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ClienteNuevo' }
-            example: { codigo: CLI0001, razonSocial: Cliente Ejemplo SA de CV, rfc: XAXX010101000, tipoCliente: 1, limiteCredito: 50000, regimenFiscal: '601', usoCfdi: G03, codigoPostal: '06600', pais: México }
+            example: { codigo: CLI0001, razonSocial: Cliente Ejemplo SA de CV, rfc: XAXX010101000, tipoCliente: 1, regimenFiscal: '601', usoCfdi: G03, codigoPostal: '06600', pais: México }
       responses:
         '201': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/empresas/{empresa}/clientes/buscar:
     get:
       tags: [Clientes]
-      summary: Buscar un cliente por su código
-      description: Consulta el cliente en Comercial y devuelve su `id` de Acusa, para usarlo en las demás rutas.
+      summary: Buscar cliente por código
       parameters:
-      - { name: codigo, in: query, required: true, schema: { type: string }, description: Código del cliente en Comercial. }
+      - $ref: '#/components/parameters/empresa'
+      - { name: codigo, in: query, required: true, schema: { type: string } }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/clientes/{id}:
-    parameters:
-    - $ref: '#/components/parameters/id'
+        '422': { $ref: '#/components/responses/Error' }
+  /api/clientes/{id}/consultar:
     get:
       tags: [Clientes]
-      summary: Consultar un cliente
+      summary: Consultar cliente
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/clientes/{id}/actualizar:
     patch:
       tags: [Clientes]
-      summary: Actualizar un cliente
-      description: Actualiza los datos del cliente. La dirección se actualiza con `PATCH /api/clientes/{id}/direcciones`.
+      summary: Actualizar cliente
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ClienteCambios' }
-            example: { razonSocial: Cliente Ejemplo SA de CV, limiteCredito: 80000, regimenFiscal: '601', usoCfdi: G03 }
+            example: { razonSocial: Cliente Ejemplo SA de CV, regimenFiscal: '601', usoCfdi: G03 }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/clientes/{id}/direcciones:
-    parameters:
-    - $ref: '#/components/parameters/id'
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/clientes/{id}/direcciones/consultar:
     get:
       tags: [Clientes]
-      summary: Consultar las direcciones de un cliente
-      description: Devuelve la lista de direcciones que tiene el cliente (fiscal y de envío). Con `tipo` devuelve solo esa.
+      summary: Consultar direcciones del cliente
       parameters:
-      - { name: tipo, in: query, required: false, schema: { type: integer, enum: [0, 1] }, description: '0 fiscal, 1 envío.' }
+      - $ref: '#/components/parameters/id'
+      - { name: tipoDireccion, in: query, required: false, schema: { type: integer, enum: [0, 1] }, description: '0 fiscal, 1 envío' }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/clientes/{id}/direcciones/crear:
     post:
       tags: [Clientes]
-      summary: Crear una dirección del cliente
-      description: Crea la dirección fiscal (`tipo` 0) o de envío (`tipo` 1). Si el cliente ya tiene ese tipo de dirección responde `409`; para cambiarla use `PATCH`.
+      summary: Crear dirección del cliente
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/DireccionNueva' }
-            example: { tipo: 1, calle: Av. Reforma, numeroExterior: '100', colonia: Juárez, codigoPostal: '06600', municipio: Cuauhtémoc, ciudad: Ciudad de México, estado: CDMX, pais: México }
+            example: { tipoDireccion: 1, codigoPostal: '06600', pais: México, calle: Av. Reforma, numeroExterior: '100' }
       responses:
         '201': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '409': { $ref: '#/components/responses/Conflicto' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/clientes/{id}/direcciones/actualizar:
     patch:
       tags: [Clientes]
-      summary: Actualizar una dirección del cliente
-      description: Cambia solo los campos que se envían y conserva los demás. `tipo` indica cuál dirección (0 fiscal, por omisión; 1 envío). Si el cliente no tiene esa dirección responde `404`.
+      summary: Actualizar dirección del cliente
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/DireccionCambios' }
-            example: { tipo: 0, calle: Av. Insurgentes, numeroExterior: '200' }
+            example: { tipoDireccion: 0, calle: Av. Insurgentes }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/empresas/{empresa}/productos:
-    parameters:
-    - $ref: '#/components/parameters/empresa'
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/empresas/{empresa}/productos/crear:
     post:
       tags: [Productos]
-      summary: Crear un producto o servicio
-      description: La respuesta trae el `id` del producto.
+      summary: Crear producto
+      parameters: [ { $ref: '#/components/parameters/empresa' } ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ProductoNuevo' }
-            example: { codigo: SERV0001, nombre: Renta de servidor, unidadBase: Pieza, precio1: 2000, claveSat: '81112200', tipoProducto: 3, descripcion: Renta mensual de servidor, textosExtra: [Periodo mensual] }
+            example: { codigo: SERV0001, nombre: Renta de servidor, unidadBase: Pieza, precio1: 2000, claveSat: '81112200', tipoProducto: 3 }
       responses:
         '201': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/empresas/{empresa}/productos/buscar:
     get:
       tags: [Productos]
-      summary: Buscar un producto por su código
-      description: Consulta el producto en Comercial y devuelve su `id` de Acusa.
+      summary: Buscar producto por código
       parameters:
-      - { name: codigo, in: query, required: true, schema: { type: string }, description: Código del producto en Comercial. }
+      - $ref: '#/components/parameters/empresa'
+      - { name: codigo, in: query, required: true, schema: { type: string } }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/productos/{id}:
-    parameters:
-    - $ref: '#/components/parameters/id'
+        '422': { $ref: '#/components/responses/Error' }
+  /api/productos/{id}/consultar:
     get:
       tags: [Productos]
-      summary: Consultar un producto
+      summary: Consultar producto
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/productos/{id}/actualizar:
     patch:
       tags: [Productos]
-      summary: Actualizar un producto
-      description: Cambia los datos del catálogo. El precio con el que se factura va en cada movimiento del documento y no modifica el producto.
+      summary: Actualizar producto
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ProductoCambios' }
-            example: { nombre: Renta de servidor, precio1: 2500, descripcion: Renta mensual de servidor, claveSat: '81112200' }
+            example: { nombre: Renta de servidor, precio1: 2500 }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/empresas/{empresa}/documentos:
-    parameters:
-    - $ref: '#/components/parameters/empresa'
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/empresas/{empresa}/documentos/crear:
     post:
       tags: [Documentos]
-      summary: Crear un documento (factura) sin timbrar
-      description: |
-        Valida los datos, actualiza en el cliente el régimen fiscal y el uso de CFDI, y crea el documento en Comercial con sus movimientos. La respuesta trae el `id` del documento.
-
-        El cliente se indica con `clienteId` o `clienteCodigo`, y el producto de cada movimiento con `productoId` o `productoCodigo`. `usoCfdi` y `regimenFiscal` son obligatorios. Los impuestos de cada movimiento son opcionales: `ivaPorcentaje`, `retencionIvaPorcentaje` e `iepsPorcentaje`, de 0 a 100.
+      summary: Crear factura
+      parameters:
+      - $ref: '#/components/parameters/empresa'
+      - $ref: '#/components/parameters/idempotencia'
       requestBody:
         required: true
         content:
@@ -245,71 +187,52 @@ paths:
             schema: { $ref: '#/components/schemas/DocumentoNuevo' }
             example:
               concepto: '5'
-              serie: A
               clienteId: 12
-              fecha: '2026-11-25'
+              fecha: '2026-11-26'
               formaPago: '03'
               usoCfdi: G03
               regimenFiscal: '601'
               referencia: FAC-0001
               movimientos:
-              - { productoId: 15, unidades: 2, precio: 2000, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }
+              - { productoId: 15, unidades: 2, precio: 2000, ivaPorcentaje: 16 }
       responses:
         '201': { $ref: '#/components/responses/Resultado' }
         '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/empresas/{empresa}/documentos/buscar:
     get:
       tags: [Documentos]
-      summary: Buscar un documento por concepto, serie y folio
-      description: Consulta el documento en Comercial y devuelve su `id` de Acusa.
+      summary: Buscar factura por concepto, serie y folio
       parameters:
-      - { name: concepto, in: query, required: true, schema: { type: string, example: '5' }, description: Código del concepto de documento. }
-      - { name: serie, in: query, required: false, schema: { type: string, example: A }, description: Serie; omítala si el documento no tiene. }
-      - { name: folio, in: query, required: true, schema: { type: integer, example: 1 }, description: Folio del documento. }
+      - $ref: '#/components/parameters/empresa'
+      - { name: concepto, in: query, required: true, schema: { type: string } }
+      - { name: serie, in: query, required: false, schema: { type: string } }
+      - { name: folio, in: query, required: true, schema: { type: integer } }
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/documentos/{id}:
-    parameters:
-    - $ref: '#/components/parameters/id'
+        '422': { $ref: '#/components/responses/Error' }
+  /api/documentos/{id}/consultar:
     get:
       tags: [Documentos]
-      summary: Consultar un documento
+      summary: Consultar factura
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '404': { $ref: '#/components/responses/Error' }
   /api/documentos/{id}/timbrar:
-    parameters:
-    - $ref: '#/components/parameters/id'
     post:
       tags: [Documentos]
-      summary: Timbrar un documento
-      description: Timbra el documento con el PAC (gasta un timbre). La respuesta trae el UUID y el XML timbrado en texto plano, en el campo `xml`.
+      summary: Timbrar factura
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
-        '200':
-          description: Documento timbrado.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Timbrado' }
+        '200': { description: 'UUID y XML timbrado.' }
         '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/documentos/{id}/cancelar:
-    parameters:
-    - $ref: '#/components/parameters/id'
     post:
       tags: [Documentos]
-      summary: Cancelar un documento timbrado
-      description: Cancela el documento ante el SAT. Motivos 01 (requiere `uuidSustituto`), 02, 03 y 04.
+      summary: Cancelar factura
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
         content:
@@ -319,46 +242,27 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Resultado' }
         '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/documentos/{id}/xml:
-    parameters:
-    - $ref: '#/components/parameters/id'
+        '422': { $ref: '#/components/responses/Error' }
+  /api/documentos/{id}/descargar-xml:
     get:
       tags: [Documentos]
-      summary: Obtener el XML timbrado
+      summary: Descargar XML
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
-        '200':
-          description: XML del CFDI en texto plano.
-          content:
-            application/xml:
-              schema: { type: string }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/documentos/{id}/pdf:
-    parameters:
-    - $ref: '#/components/parameters/id'
+        '200': { description: XML del CFDI. }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/documentos/{id}/descargar-pdf:
     get:
       tags: [Documentos]
-      summary: Obtener el PDF de la factura
+      summary: Descargar PDF
+      parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
-        '200':
-          description: Archivo PDF.
-          content:
-            application/pdf:
-              schema: { type: string, format: binary }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '200': { description: PDF de la factura. }
+        '422': { $ref: '#/components/responses/Error' }
   /api/documentos/timbrar:
     post:
       tags: [Documentos]
-      summary: Timbrar varios documentos
-      description: Responde `202` de inmediato con una tarea por documento; el worker timbra cada uno en segundo plano. El máximo por petición es configurable (500 por omisión). El estado se consulta en `GET /api/sdk/tasks/{tareaId}` o en `GET /api/sdk/tasks/pendientes`.
+      summary: Timbrar varias facturas
       requestBody:
         required: true
         content:
@@ -366,79 +270,46 @@ paths:
             schema: { $ref: '#/components/schemas/VariosTimbrar' }
             example: { documentos: [31, 32, 33] }
       responses:
-        '202': { $ref: '#/components/responses/Varios' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '422': { $ref: '#/components/responses/Fallo' }
+        '202': { description: 'Una tarea por factura.' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/documentos/cancelar:
     post:
       tags: [Documentos]
-      summary: Cancelar varios documentos
-      description: Responde `202` de inmediato con una tarea por documento. Cada documento lleva su motivo (01 a 04; el 01 requiere `uuidSustituto`).
+      summary: Cancelar varias facturas
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/VariosCancelar' }
-            example: { documentos: [ { id: 31, motivo: '02' }, { id: 32, motivo: '02' } ] }
+            example: { documentos: [ { id: 31, motivo: '02' } ] }
       responses:
-        '202': { $ref: '#/components/responses/Varios' }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '422': { $ref: '#/components/responses/Fallo' }
-  /api/sdk/tasks/{tareaId}:
+        '202': { description: 'Una tarea por factura.' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/tareas/{tareaId}/consultar:
     get:
       tags: [Tareas]
-      summary: Consultar una tarea
-      description: Estado y resultado de una tarea (`Pendiente`, `EnProceso`, `Completada` o `Fallida`). Con `esperar` la respuesta aguarda a que la tarea termine.
+      summary: Consultar tarea
       parameters:
       - { name: tareaId, in: path, required: true, schema: { type: string } }
-      - name: esperar
-        in: query
-        required: false
-        schema: { type: integer, minimum: 0, maximum: 30 }
-        description: Segundos que la respuesta espera a que la tarea termine.
       responses:
-        '200': { description: Estado y resultado de la tarea. }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-        '404': { $ref: '#/components/responses/NoEncontrado' }
-  /api/sdk/tasks/pendientes:
+        '200': { description: 'Estado: Pendiente, EnProceso, Completada o Fallida.' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/tareas/pendientes:
     get:
       tags: [Tareas]
-      summary: Listar las tareas pendientes
-      description: Tareas en espera o en proceso, de la más antigua a la más reciente.
-      parameters:
-      - { name: limite, in: query, required: false, schema: { type: integer, default: 200, maximum: 1000 } }
+      summary: Listar tareas pendientes
       responses:
-        '200': { description: Lista de tareas. }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
-  /api/sdk/workers:
-    get:
-      tags: [Tareas]
-      summary: Listar los workers y si están en línea
-      responses:
-        '200': { description: Lista de workers. }
-        '401': { $ref: '#/components/responses/NoAutorizado' }
+        '200': { description: Tareas en espera o en proceso. }
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      description: Llave de API (`ak_…`) o token de `POST /api/auth/token`.
+    bearerAuth: { type: http, scheme: bearer }
   parameters:
-    empresa:
-      name: empresa
-      in: path
-      required: true
-      schema: { type: string, example: adEMPRESA_EJEMPLO }
-      description: Empresa de CONTPAQi (carpeta de la empresa). Debe estar registrada en Acusa Central.
-    id:
-      name: id
-      in: path
-      required: true
-      schema: { type: integer, format: int64, example: 12 }
-      description: Identificador de Acusa que devolvió la creación o la búsqueda.
+    empresa: { name: empresa, in: path, required: true, schema: { type: string, example: adEMPRESA_EJEMPLO } }
+    id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    idempotencia: { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 100 } }
   responses:
     Resultado:
-      description: La operación terminó. Trae el `id` de Acusa (cuando aplica), `tareaId` y `resultado` con los datos que devolvió Comercial.
+      description: Correcto.
       content:
         application/json:
           schema:
@@ -448,7 +319,7 @@ components:
               tareaId: { type: string }
               resultado: { type: object }
     EnCurso:
-      description: Pasaron 30 segundos y el worker sigue trabajando. Consulte `GET /api/sdk/tasks/{tareaId}` (también en la cabecera `Location`).
+      description: El worker sigue trabajando.
       content:
         application/json:
           schema:
@@ -457,78 +328,22 @@ components:
               id: { type: integer, format: int64, nullable: true }
               tareaId: { type: string }
               estado: { type: string, example: EnProceso }
-    Varios:
-      description: Los documentos se procesan en segundo plano.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              estado: { type: string, example: EnProceso }
-              mensaje: { type: string }
-              tareas:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    documentoId: { type: integer, format: int64 }
-                    tareaId: { type: string }
-                    error: { type: string, nullable: true }
-    Fallo:
-      description: Los datos no son válidos (`validacion`, con un elemento de `detalles` por campo) o la operación falló en Comercial (`error_sdk` u `operacion_fallida`, con `codigoSdk` y `tareaId`).
-      headers:
-        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
+    Error:
+      description: Error.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
-          examples:
-            validacion:
-              summary: Validación
-              value: { codigo: validacion, mensaje: La solicitud tiene errores de validación., detalles: ['Codigo no puede estar vacio', 'Pais no puede estar vacio'], idCorrelacion: 9f3c1a7e52b04d68 }
-            sdk:
-              summary: Error de CONTPAQi Comercial
-              value: { codigo: error_sdk, mensaje: El almacén indicado en el movimiento no existe en la empresa. Use el código de un almacén registrado en CONTPAQi Comercial., detalles: ['fAltaMovimiento = 120115: El almacén solicitado no existe.'], idCorrelacion: 9f3c1a7e52b04d68, codigoSdk: 120115, tareaId: 3f2c8a10 }
-    NoAutorizado:
-      description: Falta la cabecera Authorization o la llave no es válida.
-      headers:
-        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-          example: { codigo: no_autorizado, mensaje: Falta la cabecera Authorization (Bearer <llave de API o token>) o la llave no es válida., detalles: [], idCorrelacion: 9f3c1a7e52b04d68 }
-    NoEncontrado:
-      description: La empresa no está registrada para su cuenta, o el `id` no existe o es de otro cliente.
-      headers:
-        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-          example: { codigo: no_encontrado, mensaje: No existe el cliente 12., detalles: [], idCorrelacion: 9f3c1a7e52b04d68 }
-    Conflicto:
-      description: El registro ya existe.
-      headers:
-        X-Correlation-Id: { $ref: '#/components/headers/XCorrelationId' }
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-          example: { codigo: conflicto, mensaje: El cliente ya tiene dirección de tipo 0; actualícela con PATCH /api/clientes/12/direcciones., detalles: [], idCorrelacion: 9f3c1a7e52b04d68 }
-  headers:
-    XCorrelationId:
-      description: Identificador de correlación de la petición; es el mismo `idCorrelacion` del cuerpo de error y el de los logs.
-      schema: { type: string, example: 9f3c1a7e52b04d68 }
+          example: { codigo: validacion, mensaje: La solicitud tiene errores de validación., detalles: ['Pais no puede estar vacio'], idCorrelacion: 9f3c1a7e52b04d68 }
   schemas:
     Error:
       type: object
-      required: [codigo, mensaje, detalles]
       properties:
-        codigo:
-          type: string
-          enum: [solicitud_invalida, no_autorizado, no_encontrado, metodo_no_permitido, conflicto, validacion, operacion_fallida, error_sdk, demasiados_intentos, no_implementado, error_interno]
-        mensaje: { type: string, description: 'Texto para la persona.' }
-        detalles: { type: array, items: { type: string }, description: 'Una entrada por validación que falló; con `error_sdk`, el texto original del SDK.' }
-        idCorrelacion: { type: string, description: 'Mismo valor de la cabecera `X-Correlation-Id`.' }
-        codigoSdk: { type: integer, description: 'Código de error del SDK de CONTPAQi, cuando el rechazo vino de Comercial.' }
-        tareaId: { type: string, description: 'Tarea en la que falló la operación; se consulta en `GET /api/sdk/tasks/{tareaId}`.' }
+        codigo: { type: string, enum: [solicitud_invalida, no_autorizado, no_encontrado, conflicto, validacion, operacion_fallida, error_sdk, demasiados_intentos, error_interno] }
+        mensaje: { type: string }
+        detalles: { type: array, items: { type: string } }
+        idCorrelacion: { type: string }
+        codigoSdk: { type: integer }
+        tareaId: { type: string }
     ClienteNuevo:
       type: object
       required: [codigo, razonSocial, rfc, codigoPostal, pais]
@@ -536,19 +351,19 @@ components:
         codigo: { type: string }
         razonSocial: { type: string }
         rfc: { type: string }
-        tipoCliente: { type: integer, enum: [1, 2, 3], description: '1 cliente, 2 cliente/proveedor, 3 proveedor', example: 1 }
+        tipoCliente: { type: integer, enum: [1, 2, 3] }
         limiteCredito: { type: number }
-        regimenFiscal: { type: string, description: Clave SAT, example: '601' }
-        usoCfdi: { type: string, description: Clave SAT, example: G03 }
-        codigoPostal: { type: string, description: Código postal de la dirección fiscal (5 dígitos), example: '06600' }
-        pais: { type: string, example: México }
-        calle: { type: string, description: Opcional }
-        numeroExterior: { type: string, description: Opcional }
-        numeroInterior: { type: string, description: Opcional }
-        colonia: { type: string, description: Opcional }
-        municipio: { type: string, description: Opcional }
-        ciudad: { type: string, description: Opcional }
-        estado: { type: string, description: Opcional }
+        regimenFiscal: { type: string }
+        usoCfdi: { type: string }
+        codigoPostal: { type: string }
+        pais: { type: string }
+        calle: { type: string }
+        numeroExterior: { type: string }
+        numeroInterior: { type: string }
+        colonia: { type: string }
+        municipio: { type: string }
+        ciudad: { type: string }
+        estado: { type: string }
     ClienteCambios:
       type: object
       properties:
@@ -561,20 +376,20 @@ components:
       type: object
       required: [codigoPostal, pais]
       properties:
-        tipo: { type: integer, enum: [0, 1], default: 0, description: '0 fiscal, 1 envío' }
-        codigoPostal: { type: string, example: '06600' }
-        pais: { type: string, example: México }
-        calle: { type: string, description: Opcional }
-        numeroExterior: { type: string, description: Opcional }
-        numeroInterior: { type: string, description: Opcional }
-        colonia: { type: string, description: Opcional }
-        municipio: { type: string, description: Opcional }
-        ciudad: { type: string, description: Opcional }
-        estado: { type: string, description: Opcional }
+        tipoDireccion: { type: integer, enum: [0, 1], default: 0, description: '0 fiscal, 1 envío' }
+        codigoPostal: { type: string }
+        pais: { type: string }
+        calle: { type: string }
+        numeroExterior: { type: string }
+        numeroInterior: { type: string }
+        colonia: { type: string }
+        municipio: { type: string }
+        ciudad: { type: string }
+        estado: { type: string }
     DireccionCambios:
       type: object
       properties:
-        tipo: { type: integer, enum: [0, 1], default: 0, description: '0 fiscal, 1 envío' }
+        tipoDireccion: { type: integer, enum: [0, 1], default: 0 }
         codigoPostal: { type: string }
         pais: { type: string }
         calle: { type: string }
@@ -590,11 +405,11 @@ components:
       properties:
         codigo: { type: string }
         nombre: { type: string }
-        unidadBase: { type: string, description: Debe existir en la empresa, example: Pieza }
+        unidadBase: { type: string }
         precio1: { type: number }
         descripcion: { type: string }
-        claveSat: { type: string, example: '81112200' }
-        tipoProducto: { type: integer, enum: [1, 2, 3], description: '1 producto, 2 paquete, 3 servicio', example: 3 }
+        claveSat: { type: string }
+        tipoProducto: { type: integer, enum: [1, 2, 3] }
         textosExtra: { type: array, items: { type: string } }
     ProductoCambios:
       type: object
@@ -608,71 +423,51 @@ components:
       type: object
       required: [concepto, fecha, formaPago, usoCfdi, regimenFiscal, movimientos]
       properties:
-        concepto: { type: string, example: '5' }
-        serie: { type: string, example: A }
-        clienteId: { type: integer, format: int64, description: Id de Acusa del cliente (o use clienteCodigo) }
-        clienteCodigo: { type: string, description: Código del cliente en Comercial (o use clienteId) }
-        fecha: { type: string, format: date, description: aaaa-mm-dd }
-        formaPago: { type: string, description: Clave SAT de forma de pago, example: '03' }
-        usoCfdi: { type: string, description: Clave SAT, obligatoria, example: G03 }
-        regimenFiscal: { type: string, description: Clave SAT, obligatoria, example: '601' }
-        referencia: { type: string, description: Hasta 20 caracteres; si no se manda, Acusa genera una }
-        movimientos:
-          type: array
-          minItems: 1
-          items: { $ref: '#/components/schemas/Movimiento' }
+        concepto: { type: string }
+        serie: { type: string }
+        clienteId: { type: integer, format: int64 }
+        clienteCodigo: { type: string }
+        fecha: { type: string, format: date }
+        formaPago: { type: string }
+        usoCfdi: { type: string }
+        regimenFiscal: { type: string }
+        referencia: { type: string, maxLength: 20 }
+        movimientos: { type: array, items: { $ref: '#/components/schemas/Movimiento' } }
     Movimiento:
       type: object
       required: [unidades, precio]
       properties:
-        productoId: { type: integer, format: int64, description: Id de Acusa del producto (o use productoCodigo) }
-        productoCodigo: { type: string, description: Código del producto en Comercial (o use productoId) }
-        unidades: { type: number, minimum: 0, exclusiveMinimum: true }
-        precio: { type: number, minimum: 0, description: Precio de la factura; no cambia el precio del producto en el catálogo }
-        almacen: { type: string, description: Si no se manda, el almacén por omisión de la cuenta }
-        ivaPorcentaje: { type: number, minimum: 0, maximum: 100, example: 16 }
-        retencionIvaPorcentaje: { type: number, minimum: 0, maximum: 100 }
-        iepsPorcentaje: { type: number, minimum: 0, maximum: 100 }
+        productoId: { type: integer, format: int64 }
+        productoCodigo: { type: string }
+        unidades: { type: number }
+        precio: { type: number }
+        almacen: { type: string }
+        ivaPorcentaje: { type: number }
+        retencionIvaPorcentaje: { type: number }
+        iepsPorcentaje: { type: number }
     VariosTimbrar:
       type: object
       required: [documentos]
       properties:
-        documentos:
-          type: array
-          minItems: 1
-          items: { type: integer, format: int64 }
-          description: Ids de Acusa de los documentos.
+        documentos: { type: array, items: { type: integer, format: int64 } }
     VariosCancelar:
       type: object
       required: [documentos]
       properties:
         documentos:
           type: array
-          minItems: 1
           items:
             type: object
             required: [id, motivo]
             properties:
               id: { type: integer, format: int64 }
               motivo: { type: string, enum: ['01', '02', '03', '04'] }
-              uuidSustituto: { type: string, description: Obligatorio con el motivo 01 }
+              uuidSustituto: { type: string }
     Cancelacion:
       type: object
       required: [motivo]
       properties:
         motivo: { type: string, enum: ['01', '02', '03', '04'] }
-        uuidSustituto: { type: string, description: Obligatorio con el motivo 01 }
-    Timbrado:
-      type: object
-      properties:
-        id: { type: integer, format: int64 }
-        tareaId: { type: string }
-        concepto: { type: string }
-        serie: { type: string, nullable: true }
-        folio: { type: integer }
-        uuid: { type: string }
-        estado: { type: string, example: timbrada }
-        xml: { type: string, nullable: true, description: 'XML del CFDI timbrado en texto plano. Es null si Comercial no lo entregó a tiempo; se pide con GET /api/documentos/{id}/xml.' }
-        resultado: { type: object }
+        uuidSustituto: { type: string }
 security:
 - bearerAuth: []

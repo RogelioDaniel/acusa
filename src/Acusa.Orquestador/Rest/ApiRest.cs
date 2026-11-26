@@ -51,7 +51,7 @@ public static class ApiRest
 
     public static void Mapear(WebApplication aplicacion)
     {
-        aplicacion.MapGet("/api/empresas", (HttpContext http, Almacen almacen, Seguridad seguridad) =>
+        aplicacion.MapGet("/api/empresas/listar", (HttpContext http, Almacen almacen, Seguridad seguridad) =>
         {
             if (FacturacionRutas.AutenticarPublico(http, almacen, seguridad) is not { } quien)
             {
@@ -62,30 +62,33 @@ public static class ApiRest
         });
 
         var porEmpresa = aplicacion.MapGroup("/api/empresas/{empresa}");
-        RutaDeEmpresa(porEmpresa, "POST", "/clientes", true, CrearClienteAsync);
-        RutaDeEmpresa(porEmpresa, "GET", "/clientes", false, BuscarClienteAsync);
-        RutaDeEmpresa(porEmpresa, "POST", "/productos", true, CrearProductoAsync);
-        RutaDeEmpresa(porEmpresa, "GET", "/productos", false, BuscarProductoAsync);
-        RutaDeEmpresa(porEmpresa, "POST", "/documentos", true, CrearDocumentoAsync);
-        RutaDeEmpresa(porEmpresa, "GET", "/documentos", false, BuscarDocumentoAsync);
+        RutaDeEmpresa(porEmpresa, "POST", "/clientes/crear", true, CrearClienteAsync);
+        RutaDeEmpresa(porEmpresa, "GET", "/clientes/buscar", false, BuscarClienteAsync);
+        RutaDeEmpresa(porEmpresa, "POST", "/productos/crear", true, CrearProductoAsync);
+        RutaDeEmpresa(porEmpresa, "GET", "/productos/buscar", false, BuscarProductoAsync);
+        RutaDeEmpresa(porEmpresa, "POST", "/documentos/crear", true, CrearDocumentoAsync);
+        RutaDeEmpresa(porEmpresa, "GET", "/documentos/buscar", false, BuscarDocumentoAsync);
 
-        RutaDeRecurso(aplicacion, "GET", "/api/clientes/{id:long}", TipoCliente, false, LeerClienteAsync);
-        RutaDeRecurso(aplicacion, "PATCH", "/api/clientes/{id:long}", TipoCliente, true, ActualizarClienteAsync);
-        RutaDeRecurso(aplicacion, "GET", "/api/clientes/{id:long}/direcciones", TipoCliente, false, LeerDireccionesAsync);
-        RutaDeRecurso(aplicacion, "POST", "/api/clientes/{id:long}/direcciones", TipoCliente, true, CrearDireccionAsync);
-        RutaDeRecurso(aplicacion, "PATCH", "/api/clientes/{id:long}/direcciones", TipoCliente, true, ActualizarDireccionAsync);
+        RutaDeRecurso(aplicacion, "GET", "/api/clientes/{id:long}/consultar", TipoCliente, false, LeerClienteAsync);
+        RutaDeRecurso(aplicacion, "PATCH", "/api/clientes/{id:long}/actualizar", TipoCliente, true, ActualizarClienteAsync);
+        RutaDeRecurso(aplicacion, "GET", "/api/clientes/{id:long}/direcciones/consultar", TipoCliente, false, LeerDireccionesAsync);
+        RutaDeRecurso(aplicacion, "POST", "/api/clientes/{id:long}/direcciones/crear", TipoCliente, true, CrearDireccionAsync);
+        RutaDeRecurso(aplicacion, "PATCH", "/api/clientes/{id:long}/direcciones/actualizar", TipoCliente, true, ActualizarDireccionAsync);
 
-        RutaDeRecurso(aplicacion, "GET", "/api/productos/{id:long}", TipoProducto, false, LeerProductoAsync);
-        RutaDeRecurso(aplicacion, "PATCH", "/api/productos/{id:long}", TipoProducto, true, ActualizarProductoAsync);
+        RutaDeRecurso(aplicacion, "GET", "/api/productos/{id:long}/consultar", TipoProducto, false, LeerProductoAsync);
+        RutaDeRecurso(aplicacion, "PATCH", "/api/productos/{id:long}/actualizar", TipoProducto, true, ActualizarProductoAsync);
 
-        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}", TipoDocumento, false, LeerDocumentoAsync);
+        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/consultar", TipoDocumento, false, LeerDocumentoAsync);
         RutaDeRecurso(aplicacion, "POST", "/api/documentos/{id:long}/timbrar", TipoDocumento, false, TimbrarAsync);
         RutaDeRecurso(aplicacion, "POST", "/api/documentos/{id:long}/cancelar", TipoDocumento, true, CancelarAsync);
-        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/xml", TipoDocumento, false, contexto => ArchivoAsync(contexto, "xml"));
-        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/pdf", TipoDocumento, false, contexto => ArchivoAsync(contexto, "pdf"));
+        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/descargar-xml", TipoDocumento, false, contexto => ArchivoAsync(contexto, "xml"));
+        RutaDeRecurso(aplicacion, "GET", "/api/documentos/{id:long}/descargar-pdf", TipoDocumento, false, contexto => ArchivoAsync(contexto, "pdf"));
 
         RutaGeneral(aplicacion, "POST", "/api/documentos/timbrar", true, contexto => VariosAsync(contexto, cancelar: false));
         RutaGeneral(aplicacion, "POST", "/api/documentos/cancelar", true, contexto => VariosAsync(contexto, cancelar: true));
+
+        RutaGeneral(aplicacion, "GET", "/api/tareas/{tareaId}/consultar", false, ConsultarTareaAsync);
+        RutaGeneral(aplicacion, "GET", "/api/tareas/pendientes", false, ListarTareasPendientesAsync);
     }
 
     private static void RutaDeEmpresa(RouteGroupBuilder grupo, string metodo, string patron, bool conCuerpo, Manejo manejo) =>
@@ -222,7 +225,7 @@ public static class ApiRest
 
     private static IResult EnProceso(Contexto contexto, string? tareaId, long? id = null)
     {
-        contexto.Http.Response.Headers.Location = $"/api/sdk/tasks/{tareaId}";
+        contexto.Http.Response.Headers.Location = $"/api/tareas/{tareaId}/consultar";
         return Results.Json(new { id, tareaId, estado = "EnProceso", mensaje = "El worker sigue trabajando; consulte la tarea." }, statusCode: 202);
     }
 
@@ -258,7 +261,7 @@ public static class ApiRest
         {
             var error = Errores.DeTarea(guardado.Error, guardado.CodigoSdk, guardado.TareaId) with
             {
-                Mensaje = $"El cliente {codigo} se creó, pero no se pudo guardar su dirección fiscal. Guárdela con POST /api/clientes/{id}/direcciones.",
+                Mensaje = $"El cliente {codigo} se creó, pero no se pudo guardar su dirección fiscal. Guárdela con POST /api/clientes/{id}/direcciones/crear.",
             };
             return Results.Json(error, statusCode: 422);
         }
@@ -300,7 +303,7 @@ public static class ApiRest
         var cambios = Campos(cuerpo, "razonSocial", "rfc", "limiteCredito", "regimenFiscal", "usoCfdi");
         if (cambios.Count == 0)
         {
-            return Errores.Validacion(["No hay datos que actualizar; la dirección se actualiza con PATCH /api/clientes/{id}/direcciones"]);
+            return Errores.Validacion(["No hay datos que actualizar; la dirección se actualiza con PATCH /api/clientes/{id}/direcciones/actualizar"]);
         }
 
         cambios["codigo"] = codigo;
@@ -373,7 +376,7 @@ public static class ApiRest
 
         if (existente.Ok)
         {
-            return Errores.Json(409, $"El cliente ya tiene dirección de tipo {tipo}; actualícela con PATCH /api/clientes/{contexto.Recurso.Id}/direcciones.");
+            return Errores.Json(409, $"El cliente ya tiene dirección de tipo {tipo}; actualícela con PATCH /api/clientes/{contexto.Recurso.Id}/direcciones/actualizar.");
         }
 
         if (!EsDireccionInexistente(existente))
@@ -420,7 +423,7 @@ public static class ApiRest
         {
             if (EsDireccionInexistente(existente))
             {
-                return Errores.Json(404, $"El cliente no tiene dirección de tipo {tipo}; créela con POST /api/clientes/{contexto.Recurso.Id}/direcciones.");
+                return Errores.Json(404, $"El cliente no tiene dirección de tipo {tipo}; créela con POST /api/clientes/{contexto.Recurso.Id}/direcciones/crear.");
             }
 
             return Responder(contexto, existente);
@@ -824,8 +827,30 @@ public static class ApiRest
             tareas.Add(new { documentoId = pedido.Recurso.Id, tareaId = encolada.TareaId, error = (string?)null });
         }
 
-        contexto.Http.Response.Headers.Location = "/api/sdk/tasks/pendientes";
+        contexto.Http.Response.Headers.Location = "/api/tareas/pendientes";
         return Results.Json(new { estado = "EnProceso", mensaje = "Los documentos se procesan en segundo plano; consulte cada tarea o las pendientes.", tareas }, statusCode: 202);
+    }
+
+    private static Task<IResult> ConsultarTareaAsync(Contexto contexto)
+    {
+        var tareaId = Convert.ToString(contexto.Http.Request.RouteValues["tareaId"], CultureInfo.InvariantCulture) ?? string.Empty;
+        if (contexto.Almacen.ObtenerTarea(contexto.Quien.ClienteId, tareaId) is not { } tarea)
+        {
+            return Task.FromResult(Errores.Json(404, $"No existe la tarea {tareaId}."));
+        }
+
+        return Task.FromResult(Results.Json(tarea));
+    }
+
+    private static Task<IResult> ListarTareasPendientesAsync(Contexto contexto)
+    {
+        var limite = 200;
+        if (int.TryParse(contexto.Consulta("limite"), NumberStyles.None, CultureInfo.InvariantCulture, out var limitePedido))
+        {
+            limite = limitePedido;
+        }
+
+        return Task.FromResult(Results.Json(contexto.Almacen.ListarTareasPendientes(contexto.Quien.ClienteId, limite)));
     }
 
     private static string? ValidarCancelacion(JsonObject datos, List<string> errores, string prefijo)

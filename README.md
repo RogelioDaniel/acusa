@@ -39,14 +39,14 @@ Acusa; el resto de las operaciones usan ese `id` sin repetir la empresa.
 
 | Recurso | Rutas |
 |---|---|
-| Clientes | `POST /api/empresas/{empresa}/clientes` (código postal y país obligatorios), `GET …/clientes?codigo=` (devuelve el `id`), `GET` y `PATCH /api/clientes/{id}` |
-| Direcciones | `GET`, `POST` y `PATCH /api/clientes/{id}/direcciones` (`tipo` 0 fiscal, 1 envío; solo código postal y país obligatorios) |
-| Productos | `POST /api/empresas/{empresa}/productos`, `GET …/productos?codigo=`, `GET` y `PATCH /api/productos/{id}` |
-| Documentos | `POST /api/empresas/{empresa}/documentos`, `GET …/documentos?concepto=&serie=&folio=`, `GET /api/documentos/{id}` |
-| Timbrado | `POST /api/documentos/{id}/timbrar` (devuelve el UUID y el XML en texto plano), `POST /api/documentos/timbrar` (varios, asíncrono) |
-| Archivos | `GET /api/documentos/{id}/xml` y `…/pdf` |
-| Cancelación | `POST /api/documentos/{id}/cancelar`, `POST /api/documentos/cancelar` (varios, asíncrono) |
-| Tareas | `GET /api/sdk/tasks/{tareaId}`, `GET /api/sdk/tasks/pendientes` |
+| Empresas | `GET /api/empresas/listar` |
+| Clientes | `POST /api/empresas/{empresa}/clientes/crear`, `GET …/clientes/buscar?codigo=`, `GET /api/clientes/{id}/consultar`, `PATCH /api/clientes/{id}/actualizar` |
+| Direcciones | `GET /api/clientes/{id}/direcciones/consultar`, `POST …/direcciones/crear`, `PATCH …/direcciones/actualizar` (`tipoDireccion` 0 fiscal, 1 envío) |
+| Productos | `POST /api/empresas/{empresa}/productos/crear`, `GET …/productos/buscar?codigo=`, `GET /api/productos/{id}/consultar`, `PATCH /api/productos/{id}/actualizar` |
+| Documentos | `POST /api/empresas/{empresa}/documentos/crear`, `GET …/documentos/buscar`, `GET /api/documentos/{id}/consultar` |
+| Timbrado y cancelación | `POST /api/documentos/{id}/timbrar`, `POST /api/documentos/{id}/cancelar`, `POST /api/documentos/timbrar` y `/cancelar` (varios) |
+| Archivos | `GET /api/documentos/{id}/descargar-xml`, `…/descargar-pdf` |
+| Tareas | `GET /api/tareas/{tareaId}/consultar`, `GET /api/tareas/pendientes` |
 
 Autenticación: `Authorization: Bearer <llave de API>` (empieza con `ak_`) o un token de `POST /api/auth/token`. Cada petición espera al
 worker hasta 30 segundos (`?esperar=N` la reduce; configurable con `Orquestador__FacturacionEsperaSegundos`): si responde, la misma

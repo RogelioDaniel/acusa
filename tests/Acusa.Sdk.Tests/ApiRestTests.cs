@@ -149,14 +149,14 @@ public sealed class ApiRestTests : IDisposable
 
     private async Task<long> CrearClienteAsync(string codigo = "CLI1", string empresa = "EMPRESA1")
     {
-        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{empresa}/clientes", ClienteNuevo(codigo));
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{empresa}/clientes/crear", ClienteNuevo(codigo));
         Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
         return (await respuesta.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
     }
 
     private async Task<long> CrearDocumentoAsync()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos", new
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",
@@ -176,7 +176,7 @@ public sealed class ApiRestTests : IDisposable
     [Fact]
     public async Task CrearCliente_SinPais_Responde422()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600" });
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600" });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
         Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("Pais"));
@@ -207,7 +207,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync("CLI9", "EMPRESA2");
 
-        var respuesta = await _http.GetAsync($"/api/clientes/{id}");
+        var respuesta = await _http.GetAsync($"/api/clientes/{id}/consultar");
 
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
         var lectura = _worker.Ordenes[^1];
@@ -223,7 +223,7 @@ public sealed class ApiRestTests : IDisposable
         _almacen.AgregarEmpresa(otroCliente, "EMPRESA1");
         var idAjeno = _almacen.RegistrarRecurso(otroCliente, "cliente", "EMPRESA1", "AJENO");
 
-        var respuesta = await _http.GetAsync($"/api/clientes/{idAjeno}");
+        var respuesta = await _http.GetAsync($"/api/clientes/{idAjeno}/consultar");
 
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
     }
@@ -233,7 +233,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.GetFromJsonAsync<JsonElement>("/api/empresas/EMPRESA1/clientes?codigo=CLI1");
+        var respuesta = await _http.GetFromJsonAsync<JsonElement>("/api/empresas/EMPRESA1/clientes/buscar?codigo=CLI1");
 
         Assert.Equal(id, respuesta.GetProperty("id").GetInt64());
     }
@@ -243,7 +243,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PatchAsJsonAsync($"/api/clientes/{id}", new { razonSocial = "Nuevo Nombre", email = "x@ejemplo.com" });
+        var respuesta = await _http.PatchAsJsonAsync($"/api/clientes/{id}/actualizar", new { razonSocial = "Nuevo Nombre", email = "x@ejemplo.com" });
 
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
         var actualizacion = _worker.Ordenes[^1].Payload;
@@ -256,7 +256,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.GetFromJsonAsync<JsonElement>($"/api/clientes/{id}/direcciones");
+        var respuesta = await _http.GetFromJsonAsync<JsonElement>($"/api/clientes/{id}/direcciones/consultar");
 
         var direcciones = respuesta.GetProperty("resultado");
         Assert.Equal(1, direcciones.GetArrayLength());
@@ -268,7 +268,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.GetAsync($"/api/clientes/{id}/direcciones?tipo=5");
+        var respuesta = await _http.GetAsync($"/api/clientes/{id}/direcciones/consultar?tipo=5");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
     }
@@ -278,7 +278,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones", new { tipo = 0, codigoPostal = "06600", pais = "México" });
+        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones/crear", new { tipo = 0, codigoPostal = "06600", pais = "México" });
 
         Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
     }
@@ -288,7 +288,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones", new { tipo = 1, codigoPostal = "42501", pais = "México" });
+        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones/crear", new { tipo = 1, codigoPostal = "42501", pais = "México" });
 
         Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
         Assert.True(_worker.Direcciones.ContainsKey(("CLI1", 1)));
@@ -301,7 +301,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones", new { tipo, codigoPostal = "42501", pais = "México" });
+        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones/crear", new { tipo, codigoPostal = "42501", pais = "México" });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
     }
@@ -311,7 +311,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PatchAsJsonAsync($"/api/clientes/{id}/direcciones", new { calle = "Av. Reforma" });
+        var respuesta = await _http.PatchAsJsonAsync($"/api/clientes/{id}/direcciones/actualizar", new { calle = "Av. Reforma" });
 
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
         var guardada = _worker.Direcciones[("CLI1", 0)];
@@ -325,7 +325,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PatchAsJsonAsync($"/api/clientes/{id}/direcciones", new { tipo = 1, calle = "Calle Uno" });
+        var respuesta = await _http.PatchAsJsonAsync($"/api/clientes/{id}/direcciones/actualizar", new { tipo = 1, calle = "Calle Uno" });
 
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
     }
@@ -345,7 +345,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var idProducto = _almacen.RegistrarRecurso(_clienteId, "producto", "EMPRESA2", "PR2");
 
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos", new
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",
@@ -453,7 +453,7 @@ public sealed class ApiRestTests : IDisposable
     {
         _almacen.EncolarTarea(_clienteId, "EMPRESA1", Operaciones.DocumentoEmitir, "{}");
 
-        var tareas = await _http.GetFromJsonAsync<JsonElement>("/api/sdk/tasks/pendientes");
+        var tareas = await _http.GetFromJsonAsync<JsonElement>("/api/tareas/pendientes");
 
         Assert.Equal(1, tareas.GetArrayLength());
     }
@@ -471,7 +471,7 @@ public sealed class ApiRestTests : IDisposable
     [Fact]
     public async Task CrearCliente_CodigoQueYaExiste_Responde409()
     {
-        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes", ClienteNuevo("EXISTE"));
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", ClienteNuevo("EXISTE"));
 
         Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
         Assert.Equal(CodigosError.Conflicto, (await LeerErrorAsync(respuesta)).Codigo);
@@ -480,7 +480,7 @@ public sealed class ApiRestTests : IDisposable
     [Fact]
     public async Task CrearDocumento_ConReferenciaSinIdempotencyKey_UsaLaReferenciaComoLlave()
     {
-        await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos", new
+        await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
         {
             concepto = "5",
             clienteCodigo = "CLI1",
@@ -501,7 +501,7 @@ public sealed class ApiRestTests : IDisposable
     {
         var id = await CrearClienteAsync();
 
-        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones", new { tipoDireccion = 1, codigoPostal = "42501", pais = "México" });
+        var respuesta = await _http.PostAsJsonAsync($"/api/clientes/{id}/direcciones/crear", new { tipoDireccion = 1, codigoPostal = "42501", pais = "México" });
 
         Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
         Assert.True(_worker.Direcciones.ContainsKey(("CLI1", 1)));
