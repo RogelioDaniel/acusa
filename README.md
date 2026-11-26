@@ -34,22 +34,26 @@ dotnet test Acusa.Sdk.slnx
 ## API
 
 La definición completa está en `src/Acusa.Orquestador/wwwroot/api-docs/openapi.yaml` y se publica con Swagger UI en `/api-docs`.
-La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.
+Los clientes, productos y documentos se crean dentro de una empresa (`/api/empresas/{empresa}/…`) y la respuesta trae su `id` de
+Acusa; el resto de las operaciones usan ese `id` sin repetir la empresa.
 
 | Recurso | Rutas |
 |---|---|
-| Clientes | `POST …/clientes` (con el código postal del domicilio fiscal), `GET` y `PATCH …/clientes/{codigo}`, `POST` y `GET …/clientes/{codigo}/direcciones` |
-| Productos | `POST …/productos`, `GET` y `PATCH …/productos/{codigo}` |
-| Documentos | `POST …/documentos`, `GET …/documentos/{concepto}/{serie}/{folio}` |
-| Timbrado | `POST …/documentos/{concepto}/{serie}/{folio}/timbrado` (devuelve el UUID y el XML en texto plano), `POST …/documentos/timbrado` (lote de hasta 25) |
-| Archivos | `GET …/{concepto}/{serie}/{folio}/xml` y `…/pdf` |
-| Cancelación | `POST …/{concepto}/{serie}/{folio}/cancelacion`, `POST …/documentos/cancelacion` (lote) |
+| Clientes | `POST /api/empresas/{empresa}/clientes` (código postal y país obligatorios), `GET …/clientes?codigo=` (devuelve el `id`), `GET` y `PATCH /api/clientes/{id}` |
+| Direcciones | `GET`, `POST` y `PATCH /api/clientes/{id}/direcciones` (`tipo` 0 fiscal, 1 envío; solo código postal y país obligatorios) |
+| Productos | `POST /api/empresas/{empresa}/productos`, `GET …/productos?codigo=`, `GET` y `PATCH /api/productos/{id}` |
+| Documentos | `POST /api/empresas/{empresa}/documentos`, `GET …/documentos?concepto=&serie=&folio=`, `GET /api/documentos/{id}` |
+| Timbrado | `POST /api/documentos/{id}/timbrar` (devuelve el UUID y el XML en texto plano), `POST /api/documentos/timbrar` (varios, asíncrono) |
+| Archivos | `GET /api/documentos/{id}/xml` y `…/pdf` |
+| Cancelación | `POST /api/documentos/{id}/cancelar`, `POST /api/documentos/cancelar` (varios, asíncrono) |
+| Tareas | `GET /api/sdk/tasks/{tareaId}`, `GET /api/sdk/tasks/pendientes` |
 
 Autenticación: `Authorization: Bearer <llave de API>` (empieza con `ak_`) o un token de `POST /api/auth/token`. Cada petición espera al
-worker hasta 60 segundos: si responde, la misma respuesta trae el resultado; si no, responde `202` con la tarea
-(`GET /api/sdk/tasks/{id}`). Con la cabecera `Idempotency-Key`, repetir una escritura no la duplica. Todo error responde con el mismo cuerpo,
-`{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }` (`422` para validaciones y para los rechazos de Comercial); el
-identificador también viaja en la cabecera `X-Correlation-Id` y aparece en los logs.
+worker hasta 30 segundos (`?esperar=N` la reduce; configurable con `Orquestador__FacturacionEsperaSegundos`): si responde, la misma
+respuesta trae el resultado; si no, responde `202` con la tarea. El timbrado y la cancelación de varios documentos responden `202` de
+inmediato con una tarea por documento (máximo configurable con `Orquestador__MaximoDocumentosPorLote`, 500 por omisión). Con la
+cabecera `Idempotency-Key`, repetir una escritura no la duplica. Todo error responde con el mismo cuerpo,
+`{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }`; el identificador también viaja en la cabecera `X-Correlation-Id`.
 
 Los impuestos de cada movimiento son `ivaPorcentaje`, `retencionIvaPorcentaje` e `iepsPorcentaje`. `usoCfdi` y `regimenFiscal` son
 obligatorios al crear un documento.

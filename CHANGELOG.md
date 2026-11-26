@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+- API REST con identificadores de Acusa: los clientes, productos y documentos se crean dentro de la empresa y se consultan, actualizan,
+  timbran y cancelan con su `id` (`/api/clientes/{id}`, `/api/productos/{id}`, `/api/documentos/{id}`), sin repetir la empresa. Búsqueda
+  por código (o concepto, serie y folio) para registros que ya existían.
+- Rutas con la acción: `/timbrar` y `/cancelar` en lugar de `/timbrado` y `/cancelacion`.
+- Timbrado y cancelación de varios documentos asíncronos: responden `202` de inmediato con una tarea por documento; máximo configurable
+  (500 por omisión) en lugar de 25. Nueva consulta `GET /api/sdk/tasks/pendientes`.
+- Espera máxima de 30 segundos, configurable y reducible con `?esperar=N`.
+- Cliente sin correo; código postal y país obligatorios. Direcciones con `tipo` numérico (0 fiscal, 1 envío), consulta de todas las
+  direcciones del cliente, alta que responde `409` si ya existe y actualización aparte que conserva los campos que no se envían.
+
 - Formato único de error en toda la API: `{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }`, con códigos estables
   (`validacion`, `no_autorizado`, `no_encontrado`, `error_sdk`, `error_interno`, …) y estados HTTP consistentes. Una excepción no
   controlada responde `500` con el mismo formato.
