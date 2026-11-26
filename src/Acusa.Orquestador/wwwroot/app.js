@@ -540,12 +540,16 @@ function vistaProbar(raiz) {
 /** Cliente, producto, documento, timbrado, XML y cancelación, con la respuesta de cada paso. */
 function flujoCompleto() {
   const cancelar = h("input", { type: "checkbox", id: "chk-cancelar" });
+  const cantidad = h("input", { type: "number", min: "1", max: "200", value: "1", id: "num-facturas", style: "width:90px" });
   const salida = h("div");
   const boton = h("button", { class: "boton" }, "Correr el flujo");
   boton.addEventListener("click", async () => {
     const empresa = memoria.get("empresa");
     if (!empresa) { aviso("Registre una empresa en Configuración."); return; }
-    if (!confirm(`El flujo crea un cliente, un producto y una factura de $1 en «${empresa}» y la timbra: gasta un timbre real. ¿Continuar?`)) return;
+    const total = Math.max(1, Math.min(200, Math.floor(Number(cantidad.value)) || 1));
+    const queCrea = total === 1 ? "una factura de $1" : `${total} facturas de $1`;
+    const queGasta = total === 1 ? "un timbre real" : `${total} timbres reales`;
+    if (!confirm(`El flujo crea un cliente, un producto y ${queCrea} en «${empresa}» y las timbra: gasta ${queGasta}. ¿Continuar?`)) return;
     boton.disabled = true; salida.replaceChildren();
     const ctx = {};
     const hoy = new Date().toISOString().slice(0, 10);
@@ -566,13 +570,47 @@ function flujoCompleto() {
     ];
     if (cancelar.checked) pasos.push(["Cancelación (motivo 02)", () => llamar("POST", D() + "/cancelar", { motivo: "02" })]);
 
+    const espera = (ms) => new Promise((listo) => setTimeout(listo, ms));
+    const vigilarPendientes = async (avance) => {
+      let r = null;
+      for (let vuelta = 0; vuelta < 600; vuelta++) {
+        r = await enviar("GET", "/api/tareas/pendientes");
+        let pendientes = 0;
+        try { pendientes = JSON.parse(r.datos).length; } catch { /* respuesta de error */ }
+        avance(`Pendientes: ${pendientes} de ${ctx.documentos.length}. Se consulta cada 3 segundos.`);
+        if (r.estado !== 200 || pendientes === 0) break;
+        await espera(3000);
+      }
+      return { ...r, ruta: "GET /api/tareas/pendientes" };
+    };
+    if (total > 1) {
+      pasos.splice(2, pasos.length - 2,
+        [`${total} facturas de $1`, async (avance) => {
+          ctx.documentos = [];
+          let r = null;
+          for (let i = 1; i <= total; i++) {
+            r = await llamar("POST", `${E}/documentos/crear`, { concepto: "5", serie: "ACUSA", clienteCodigo: ctx.cliente, referencia: `ACUSAFAC${sufijo}-${i}`, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16 }] });
+            if (r.estado !== 201) { if (r.estado === 202) throw new Error(`la factura ${i} no terminó de crearse a tiempo; el flujo se detiene.`); return r; }
+            ctx.documentos.push(JSON.parse(r.datos).id);
+            avance(`Creadas ${i} de ${total}.`);
+          }
+          return { ...r, datos: JSON.stringify({ creadas: ctx.documentos.length, ids: ctx.documentos }, null, 2) };
+        }],
+        ["Timbrado en lote", () => llamar("POST", "/api/documentos/timbrar", { documentos: ctx.documentos })],
+        ["Tareas pendientes del timbrado", vigilarPendientes]);
+      if (cancelar.checked) {
+        pasos.push(["Cancelación en lote (motivo 02)", () => llamar("POST", "/api/documentos/cancelar", { documentos: ctx.documentos.map((id) => ({ id, motivo: "02" })) })]);
+        pasos.push(["Tareas pendientes de la cancelación", vigilarPendientes]);
+      }
+    }
+
     let fallo = false;
     for (let i = 0; i < pasos.length && !fallo; i++) {
       const [titulo, correr] = pasos[i];
       const fila = h("div", { class: "tarjeta" }, h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "sub" }, "Enviando…"));
       salida.append(fila);
       try {
-        const r = await correr();
+        const r = await correr((texto) => { fila.lastChild.textContent = texto; });
         fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "mono" }, r.ruta), vistaResultado(r));
         if (r.estado < 200 || r.estado >= 300) fallo = true;
       } catch (e) { fila.replaceChildren(h("h2", null, `${i + 1}. ${titulo}`), h("p", { class: "err" }, "No se pudo enviar: " + e.message)); fallo = true; }
@@ -582,8 +620,9 @@ function flujoCompleto() {
   });
   return h("div", null,
     h("div", { class: "tarjeta" }, h("div", { class: "fila-acciones", style: "align-items:center" }, boton,
-      h("label", { for: "chk-cancelar", style: "display:flex;gap:8px;align-items:center" }, cancelar, "Cancelar la factura al final (motivo 02)")),
-      h("p", { class: "nota" }, "Factura de $1 más IVA. El timbrado gasta un timbre del PAC.")),
+      h("label", { for: "num-facturas", style: "display:flex;gap:8px;align-items:center" }, "Facturas", cantidad),
+      h("label", { for: "chk-cancelar", style: "display:flex;gap:8px;align-items:center" }, cancelar, "Cancelar al final (motivo 02)")),
+      h("p", { class: "nota" }, "Facturas de $1 más IVA. Con más de una, se timbran en lote y se muestran las tareas pendientes. Cada timbrado gasta un timbre del PAC.")),
     salida);
 }
 
