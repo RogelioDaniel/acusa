@@ -522,7 +522,7 @@ function vistaProbar(raiz) {
     if (s.id === "postman") { cuerpo.append(importadorPostman()); return; }
     try {
       const spec = await cargarSpec();
-      cuerpo.append(tarjetaSesion(), ...operaciones(spec).filter(s.filtro).map((o) => h("div", { class: "tarjeta" }, h("h2", null, o.op.summary || o.ruta), o.op.description ? h("p", { class: "sub" }, o.op.description) : null, consola(o))));
+      cuerpo.append(tarjetaSesion(), ...operaciones(spec).filter(s.filtro).sort((a, b) => Number(/descargar/.test(a.ruta)) - Number(/descargar/.test(b.ruta))).map((o) => h("div", { class: "tarjeta" }, h("h2", null, o.op.summary || o.ruta), o.op.description ? h("p", { class: "sub" }, o.op.description) : null, consola(o))));
     } catch (e) { falla(cuerpo)(e); }
   }
 
