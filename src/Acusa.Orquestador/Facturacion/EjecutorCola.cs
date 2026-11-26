@@ -35,7 +35,18 @@ public sealed class EjecutorCola(Almacen almacen, Notificador notificador, Opcio
 
         var id = encolada.TareaId!;
         var segundos = Math.Clamp(PeticionActual.EsperaSegundos ?? opciones.FacturacionEsperaSegundos, 1, Math.Max(1, opciones.FacturacionEsperaMaximaSegundos));
-        var tarea = await notificador.EsperarResultadoAsync(almacen, clienteId, id, TimeSpan.FromSeconds(segundos), ct);
+        var espera = TimeSpan.FromSeconds(segundos);
+        if (PeticionActual.Inicio is { } inicio)
+        {
+            espera -= DateTimeOffset.UtcNow - inicio;
+        }
+
+        if (espera <= TimeSpan.Zero)
+        {
+            return new ResultadoOrden(false, null, "El worker no respondió a tiempo; la tarea sigue en la cola.", null, true, id);
+        }
+
+        var tarea = await notificador.EsperarResultadoAsync(almacen, clienteId, id, espera, ct);
         return tarea?.Estado switch
         {
             EstadoTarea.Completada => new ResultadoOrden(true, tarea.Resultado, null, null, false, id),

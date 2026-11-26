@@ -144,6 +144,7 @@ public static class ApiRest
 
         PeticionActual.Texto = $"{http.Request.Method} {http.Request.Path}";
         var esperaPedida = http.Request.Query["esperar"].FirstOrDefault();
+        PeticionActual.Inicio = DateTimeOffset.UtcNow;
         PeticionActual.EsperaSegundos = null;
         if (int.TryParse(esperaPedida, NumberStyles.None, CultureInfo.InvariantCulture, out var segundos))
         {
@@ -215,7 +216,7 @@ public static class ApiRest
     {
         if (resultado.Ok)
         {
-            return Results.Json(new { id, tareaId = resultado.TareaId, resultado = resultado.Datos }, statusCode: estadoCorrecto);
+            return Results.Json(new { id, tareaId = resultado.TareaId, resultado = SinCorreo(resultado.Datos) }, statusCode: estadoCorrecto);
         }
 
         if (resultado.EnCurso)
@@ -231,10 +232,26 @@ public static class ApiRest
         return Errores.DeTareaJson(resultado.Error, resultado.CodigoSdk, resultado.TareaId);
     }
 
-    private static IResult EnProceso(Contexto contexto, string? tareaId, long? id = null)
+    private static IResult EnProceso(Contexto contexto, string? tareaId, long? id = null, string mensaje = "El worker sigue trabajando; consulte la tarea.")
     {
         contexto.Http.Response.Headers.Location = $"/api/tareas/{tareaId}/consultar";
-        return Results.Json(new { id, tareaId, estado = "EnProceso", mensaje = "El worker sigue trabajando; consulte la tarea." }, statusCode: 202);
+        return Results.Json(new { id, tareaId, estado = "EnProceso", mensaje }, statusCode: 202);
+    }
+
+    private static JsonNode? SinCorreo(JsonElement? datos)
+    {
+        if (datos is not { } elemento)
+        {
+            return null;
+        }
+
+        var nodo = JsonNode.Parse(elemento.GetRawText());
+        if (nodo is JsonObject objeto)
+        {
+            objeto.Remove("email");
+        }
+
+        return nodo;
     }
 
     private static async Task<IResult> CrearClienteAsync(Contexto contexto)
@@ -253,9 +270,33 @@ public static class ApiRest
             Operaciones.ClienteCrear,
             Campos(cuerpo, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "regimenFiscal", "usoCfdi"),
             contexto.LlaveCon("cliente"));
+        if (cliente.EnCurso)
+        {
+            return EnProceso(contexto, cliente.TareaId, id, $"El cliente se sigue creando; al terminar la tarea, guarde su dirección con POST /api/clientes/{id}/direcciones/crear.");
+        }
+
         if (!cliente.Ok)
         {
             return Responder(contexto, cliente, 201, id);
+        }
+
+        var datosFiscales = Campos(cuerpo, "regimenFiscal", "usoCfdi");
+        if (datosFiscales.Count > 0)
+        {
+            datosFiscales["codigo"] = codigo;
+            var fiscales = await contexto.Ejecutar(Operaciones.ClienteActualizar, datosFiscales, contexto.LlaveCon("fiscales"));
+            if (fiscales.Ok)
+            {
+                cliente = fiscales;
+            }
+            else if (!fiscales.EnCurso)
+            {
+                var errorFiscal = Errores.DeTarea(fiscales.Error, fiscales.CodigoSdk, fiscales.TareaId) with
+                {
+                    Mensaje = $"El cliente {codigo} se creó, pero no se pudo guardar su régimen fiscal o uso de CFDI. Guárdelos con PATCH /api/clientes/{id}/actualizar.",
+                };
+                return Results.Json(errorFiscal, statusCode: 422);
+            }
         }
 
         var direccion = DatosDeDireccion(cuerpo, codigo, DireccionFiscal);
@@ -587,7 +628,7 @@ public static class ApiRest
             Operaciones.ClienteActualizar,
             new { codigo = clienteCodigo, regimenFiscal, usoCfdi = usoDelCfdi },
             contexto.LlaveCon("cliente"));
-        if (!actualizacion.Ok)
+        if (!actualizacion.Ok && !actualizacion.EnCurso)
         {
             return Responder(contexto, actualizacion);
         }
@@ -1002,6 +1043,11 @@ public static class ApiRest
         {
             foreach (var propiedad in datosCliente.EnumerateObject())
             {
+                if (propiedad.NameEquals("email"))
+                {
+                    continue;
+                }
+
                 resultado[propiedad.Name] = JsonNode.Parse(propiedad.Value.GetRawText());
             }
         }

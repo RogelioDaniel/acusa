@@ -7,6 +7,9 @@
   Si la instalación falla, regresa a la versión anterior y vuelve a iniciar el servicio. Si la app estaba abierta, la vuelve a abrir.
 - La app reporta la versión 1.3.0 (antes se quedaba en 1.2.0 aunque se actualizara).
 - Central responde `400` (no `500`) a un cuerpo que no es UTF-8 válido o que no es un objeto JSON.
+- La espera de 30 s es de toda la petición, no de cada paso. Si el paso previo de una factura no alcanza a responder, la factura
+  se encola igual y se devuelve su tarea.
+- Crear cliente guarda el régimen fiscal y el uso de CFDI que se envían. Las respuestas de cliente ya no traen `email`.
 
 ## Sin publicar
 

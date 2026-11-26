@@ -13,4 +13,8 @@ public static class PeticionActual
     private static readonly AsyncLocal<int?> Espera = new();
 
     public static int? EsperaSegundos { get => Espera.Value; set => Espera.Value = value; }
+
+    private static readonly AsyncLocal<DateTimeOffset?> Comienzo = new();
+
+    public static DateTimeOffset? Inicio { get => Comienzo.Value; set => Comienzo.Value = value; }
 }

@@ -28,6 +28,8 @@ public sealed class ApiRestTests : IDisposable
 
         public Dictionary<(string Cliente, int Tipo), JsonObject> Direcciones { get; } = [];
 
+        public HashSet<string> TiposSinRespuesta { get; } = [];
+
         public Task<ResultadoOrden> EncolarAsync(string clienteId, string empresa, string tipo, object payload, string? llave, CancellationToken ct)
         {
             lock (_candado)
@@ -52,6 +54,11 @@ public sealed class ApiRestTests : IDisposable
 
         private ResultadoOrden Responder(string tipo, JsonElement datos, string tareaId)
         {
+            if (TiposSinRespuesta.Contains(tipo))
+            {
+                return new ResultadoOrden(false, null, "El worker no respondió a tiempo; la tarea sigue en la cola.", null, true, tareaId);
+            }
+
             if (tipo == Operaciones.DireccionLeer)
             {
                 var clave = (datos.GetProperty("codigoCliente").GetString()!, datos.GetProperty("tipo").GetInt32());
@@ -204,6 +211,51 @@ public sealed class ApiRestTests : IDisposable
         var respuesta = await _http.PostAsync("/api/empresas/EMPRESA1/clientes/crear", contenido);
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+    }
+
+    [Fact]
+    public async Task CrearCliente_ConRegimenYUso_LosGuardaConUnaActualizacion()
+    {
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", new { codigo = "CLI1", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600", pais = "México", regimenFiscal = "601", usoCfdi = "G03" });
+
+        Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
+        var actualizacion = Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.ClienteActualizar);
+        Assert.Equal("601", actualizacion.Payload.GetProperty("regimenFiscal").GetString());
+        Assert.Equal("G03", actualizacion.Payload.GetProperty("usoCfdi").GetString());
+        Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.DireccionCrear);
+    }
+
+    [Fact]
+    public async Task CrearCliente_SinRespuestaATiempo_Responde202SinCrearLaDireccion()
+    {
+        _worker.TiposSinRespuesta.Add(Operaciones.ClienteCrear);
+
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/clientes/crear", ClienteNuevo());
+
+        Assert.Equal(HttpStatusCode.Accepted, respuesta.StatusCode);
+        Assert.DoesNotContain(_worker.Ordenes, orden => orden.Tipo == Operaciones.DireccionCrear);
+        Assert.Contains("direcciones/crear", (await respuesta.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("mensaje").GetString());
+    }
+
+    [Fact]
+    public async Task CrearDocumento_ActualizacionDelClienteSinRespuesta_EncolaLaFactura()
+    {
+        await CrearClienteAsync();
+        _worker.TiposSinRespuesta.Add(Operaciones.ClienteActualizar);
+
+        var respuesta = await _http.PostAsJsonAsync("/api/empresas/EMPRESA1/documentos/crear", new
+        {
+            concepto = "5",
+            clienteCodigo = "CLI1",
+            fecha = "2026-11-25",
+            formaPago = "01",
+            usoCfdi = "G03",
+            regimenFiscal = "601",
+            movimientos = new[] { new { productoCodigo = "PR1", unidades = 1, precio = 10 } },
+        });
+
+        Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
+        Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.DocumentoCrear);
     }
 
     [Fact]
