@@ -197,7 +197,7 @@ public static class ApiRest
         }
 
         var resultado = await contexto.Ejecutar(tipo, payload, contexto.Llave);
-        return Responder(contexto, resultado, estadoCorrecto);
+        return Responder(contexto, resultado, estadoCorrecto, contexto.Recurso?.Id);
     }
 
     private static IResult Responder(Contexto contexto, ResultadoOrden resultado, int estadoCorrecto = 200, long? id = null)
