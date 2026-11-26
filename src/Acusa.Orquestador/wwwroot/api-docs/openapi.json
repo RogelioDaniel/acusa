@@ -3,12 +3,11 @@
  "info": {
   "title": "Acusa · API de facturación",
   "version": "v1",
-  "description": "API REST para crear, timbrar y cancelar facturas electrónicas sobre CONTPAQi Comercial. Cada proceso es un recurso: clientes (con sus direcciones), productos y documentos, con su timbrado individual o por lote, sus archivos y su cancelación. La empresa de CONTPAQi va en la ruta: `/api/empresas/{empresa}/…`.\n\n**Autenticación.** Envíe su llave de API (empieza con `ak_`) en la cabecera `Authorization: Bearer <llave>`. También puede cambiarla por un token de una hora con `POST /api/auth/token` (cabecera `x-api-key`). Para probar aquí, pegue la llave arriba y pulse «Obtener token».\n\n**Flujo de una factura.** Crear el cliente y el producto; crear el documento con sus movimientos; timbrarlo (devuelve el UUID y el XML en texto plano); consultar el XML y el PDF; cancelarlo si hace falta.\n\n**Respuesta.** Cada petición espera al worker hasta 60 segundos. Si responde, la misma respuesta trae el resultado (`200` o `201`); si falla en Comercial, `422` con el detalle; si pasa el tiempo, `202` con el identificador de la tarea, que se consulta en `GET /api/sdk/tasks/{tareaId}`. Los errores de validación responden `422` con `{ \"errors\": [ … ] }`.\n\n**Reintentos.** Con la cabecera `Idempotency-Key` (hasta 100 caracteres), repetir una petición de escritura devuelve el resultado original y no duplica el documento.\n\nLas operaciones requieren un Acusa Worker en línea. La contraseña del certificado vive en el worker y nunca viaja en las peticiones.\n"
+  "description": "Facturación electrónica sobre CONTPAQi Comercial.\n\n- **Autenticación:** `Authorization: Bearer <llave de API>`.\n- **Identificadores:** al crear o buscar se recibe un `id`; las demás rutas lo usan.\n- **Respuesta:** hasta 30 s de espera; después `202` con `tareaId`.\n- **Errores:** `{ codigo, mensaje, detalles, idCorrelacion }`.\n- **Duplicados:** `Idempotency-Key` o `referencia` evitan crear dos veces la misma factura.\n"
  },
  "servers": [
   {
-   "url": "/",
-   "description": "Este servidor"
+   "url": "/"
   }
  ],
  "tags": [
@@ -46,77 +45,46 @@
       "required": true,
       "schema": {
        "type": "string"
-      },
-      "description": "Su llave de API (`ak_…`)."
+      }
      }
     ],
     "responses": {
      "200": {
-      "description": "Token.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object",
-         "properties": {
-          "token": {
-           "type": "string"
-          },
-          "expiraEnSegundos": {
-           "type": "integer",
-           "example": 3600
-          }
-         }
-        }
-       }
-      }
+      "description": "Token."
      },
      "401": {
-      "description": "Llave inválida o revocada."
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas": {
+  "/api/empresas/listar": {
    "get": {
     "tags": [
      "Empresas"
     ],
-    "summary": "Listar las empresas de CONTPAQi registradas",
+    "summary": "Listar empresas",
     "responses": {
      "200": {
-      "description": "Nombres de empresa (carpeta de la empresa en CONTPAQi).",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "array",
-         "items": {
-          "type": "string"
-         },
-         "example": [
-          "adEMPRESA_EJEMPLO"
-         ]
-        }
-       }
-      }
+      "description": "Empresas registradas."
      },
      "401": {
-      "$ref": "#/components/responses/NoAutorizado"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/clientes": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    }
-   ],
+  "/api/empresas/{empresa}/clientes/crear": {
    "post": {
     "tags": [
      "Clientes"
     ],
-    "summary": "Crear un cliente",
-    "description": "Crea el cliente y guarda su domicilio fiscal. El código postal es obligatorio porque el CFDI 4.0 lo exige del receptor; el resto de la dirección es opcional.",
+    "summary": "Crear cliente",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/empresa"
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -129,140 +97,9 @@
         "razonSocial": "Cliente Ejemplo SA de CV",
         "rfc": "XAXX010101000",
         "tipoCliente": 1,
-        "limiteCredito": 50000,
-        "email": "facturacion@cliente.com",
         "regimenFiscal": "601",
         "usoCfdi": "G03",
-        "codigoPostal": "06600"
-       }
-      }
-     }
-    },
-    "responses": {
-     "201": {
-      "$ref": "#/components/responses/Resultado"
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
-     }
-    }
-   }
-  },
-  "/api/empresas/{empresa}/clientes/{codigo}": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/codigo"
-    }
-   ],
-   "get": {
-    "tags": [
-     "Clientes"
-    ],
-    "summary": "Consultar un cliente",
-    "responses": {
-     "200": {
-      "$ref": "#/components/responses/Resultado"
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
-     }
-    }
-   },
-   "patch": {
-    "tags": [
-     "Clientes"
-    ],
-    "summary": "Actualizar un cliente (incluye régimen fiscal, uso de CFDI y código postal)",
-    "description": "Si viene el código postal u otro dato del domicilio, también se actualiza el domicilio fiscal (el código postal es obligatorio en ese caso).",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ClienteCambios"
-       },
-       "example": {
-        "razonSocial": "Cliente Ejemplo SA de CV",
-        "limiteCredito": 80000,
-        "email": "facturacion@cliente.com",
-        "regimenFiscal": "601",
-        "usoCfdi": "G03",
-        "codigoPostal": "06600"
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "$ref": "#/components/responses/Resultado"
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
-     }
-    }
-   }
-  },
-  "/api/empresas/{empresa}/clientes/{codigo}/direcciones": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/codigo"
-    }
-   ],
-   "post": {
-    "tags": [
-     "Clientes"
-    ],
-    "summary": "Guardar la dirección de un cliente",
-    "description": "Crea o actualiza la dirección fiscal (`tipo` 0 o `fiscal`) o de envío (`tipo` 1 o `envio`) del cliente.",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/Direccion"
-       },
-       "example": {
-        "tipo": "fiscal",
-        "calle": "Av. Reforma",
-        "numeroExterior": "100",
-        "colonia": "Juárez",
         "codigoPostal": "06600",
-        "municipio": "Cuauhtémoc",
-        "ciudad": "Ciudad de México",
-        "estado": "CDMX",
         "pais": "México"
        }
       }
@@ -272,78 +109,228 @@
      "201": {
       "$ref": "#/components/responses/Resultado"
      },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
+     "409": {
+      "$ref": "#/components/responses/Error"
      },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/clientes/{codigo}/direcciones/{tipo}": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/codigo"
-    },
-    {
-     "name": "tipo",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "string",
-      "enum": [
-       "fiscal",
-       "envio"
-      ]
-     },
-     "description": "Tipo de dirección."
-    }
-   ],
+  "/api/empresas/{empresa}/clientes/buscar": {
    "get": {
     "tags": [
      "Clientes"
     ],
-    "summary": "Consultar la dirección de un cliente",
+    "summary": "Buscar cliente por código",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/empresa"
+     },
+     {
+      "name": "codigo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "200": {
       "$ref": "#/components/responses/Resultado"
      },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/productos": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
+  "/api/clientes/{id}/consultar": {
+   "get": {
+    "tags": [
+     "Clientes"
+    ],
+    "summary": "Consultar cliente",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/Resultado"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
     }
-   ],
+   }
+  },
+  "/api/clientes/{id}/actualizar": {
+   "patch": {
+    "tags": [
+     "Clientes"
+    ],
+    "summary": "Actualizar cliente",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ClienteCambios"
+       },
+       "example": {
+        "razonSocial": "Cliente Ejemplo SA de CV",
+        "regimenFiscal": "601",
+        "usoCfdi": "G03"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/Resultado"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/clientes/{id}/direcciones/consultar": {
+   "get": {
+    "tags": [
+     "Clientes"
+    ],
+    "summary": "Consultar direcciones del cliente",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     },
+     {
+      "name": "tipoDireccion",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "enum": [
+        0,
+        1
+       ]
+      },
+      "description": "0 fiscal, 1 envío"
+     }
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/Resultado"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/clientes/{id}/direcciones/crear": {
+   "post": {
+    "tags": [
+     "Clientes"
+    ],
+    "summary": "Crear dirección del cliente",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DireccionNueva"
+       },
+       "example": {
+        "tipoDireccion": 1,
+        "codigoPostal": "06600",
+        "pais": "México",
+        "calle": "Av. Reforma",
+        "numeroExterior": "100"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "$ref": "#/components/responses/Resultado"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/clientes/{id}/direcciones/actualizar": {
+   "patch": {
+    "tags": [
+     "Clientes"
+    ],
+    "summary": "Actualizar dirección del cliente",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DireccionCambios"
+       },
+       "example": {
+        "tipoDireccion": 0,
+        "calle": "Av. Insurgentes"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/Resultado"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/empresas/{empresa}/productos/crear": {
    "post": {
     "tags": [
      "Productos"
     ],
-    "summary": "Crear un producto o servicio",
+    "summary": "Crear producto",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/empresa"
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -357,11 +344,7 @@
         "unidadBase": "Pieza",
         "precio1": 2000,
         "claveSat": "81112200",
-        "tipoProducto": 3,
-        "descripcion": "Renta mensual de servidor",
-        "textosExtra": [
-         "Periodo mensual"
-        ]
+        "tipoProducto": 3
        }
       }
      }
@@ -370,58 +353,76 @@
      "201": {
       "$ref": "#/components/responses/Resultado"
      },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
+     "409": {
+      "$ref": "#/components/responses/Error"
      },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/productos/{codigo}": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/codigo"
-    }
-   ],
+  "/api/empresas/{empresa}/productos/buscar": {
    "get": {
     "tags": [
      "Productos"
     ],
-    "summary": "Consultar un producto",
+    "summary": "Buscar producto por código",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/empresa"
+     },
+     {
+      "name": "codigo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "200": {
       "$ref": "#/components/responses/Resultado"
      },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
-   },
+   }
+  },
+  "/api/productos/{id}/consultar": {
+   "get": {
+    "tags": [
+     "Productos"
+    ],
+    "summary": "Consultar producto",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/Resultado"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/productos/{id}/actualizar": {
    "patch": {
     "tags": [
      "Productos"
     ],
-    "summary": "Actualizar un producto",
+    "summary": "Actualizar producto",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -431,9 +432,7 @@
        },
        "example": {
         "nombre": "Renta de servidor",
-        "precio1": 2500,
-        "descripcion": "Renta mensual de servidor",
-        "claveSat": "81112200"
+        "precio1": 2500
        }
       }
      }
@@ -442,33 +441,29 @@
      "200": {
       "$ref": "#/components/responses/Resultado"
      },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
      "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
+      "$ref": "#/components/responses/Error"
      },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/documentos": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    }
-   ],
+  "/api/empresas/{empresa}/documentos/crear": {
    "post": {
     "tags": [
      "Documentos"
     ],
-    "summary": "Crear un documento (factura) sin timbrar",
-    "description": "Valida los datos, actualiza en el cliente el régimen fiscal y el uso de CFDI, y crea el documento en Comercial con sus movimientos. Devuelve el concepto, la serie y el folio, que identifican al documento en el resto de las rutas.\n\n`usoCfdi` y `regimenFiscal` son obligatorios. Los impuestos de cada movimiento son opcionales: `ivaPorcentaje`, `retencionIvaPorcentaje` e `iepsPorcentaje`, de 0 a 100.\n",
+    "summary": "Crear factura",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/empresa"
+     },
+     {
+      "$ref": "#/components/parameters/idempotencia"
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -478,21 +473,18 @@
        },
        "example": {
         "concepto": "5",
-        "serie": "A",
-        "clienteCodigo": "CLI0001",
-        "fecha": "2026-11-12",
+        "clienteId": 12,
+        "fecha": "2026-11-26",
         "formaPago": "03",
         "usoCfdi": "G03",
         "regimenFiscal": "601",
         "referencia": "FAC-0001",
         "movimientos": [
          {
-          "productoCodigo": "SERV0001",
+          "productoId": 15,
           "unidades": 2,
           "precio": 2000,
-          "ivaPorcentaje": 16,
-          "retencionIvaPorcentaje": 0,
-          "iepsPorcentaje": 0
+          "ivaPorcentaje": 16
          }
         ]
        }
@@ -506,330 +498,113 @@
      "202": {
       "$ref": "#/components/responses/EnCurso"
      },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/documentos/timbrado": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    }
-   ],
-   "post": {
-    "tags": [
-     "Documentos"
-    ],
-    "summary": "Timbrar varios documentos en una sola orden",
-    "description": "Hasta 25 documentos. El worker los timbra de uno en uno (cada timbrado tarda de 5 a 10 segundos) y la respuesta detalla el resultado de cada uno; si pasan 60 segundos responde `202` y el detalle se consulta en la tarea.",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/Lote"
-       },
-       "example": {
-        "documentos": [
-         {
-          "concepto": "5",
-          "serie": "A",
-          "folio": 1
-         },
-         {
-          "concepto": "5",
-          "serie": "A",
-          "folio": 2
-         }
-        ]
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "$ref": "#/components/responses/Resultado"
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
-     }
-    }
-   }
-  },
-  "/api/empresas/{empresa}/documentos/cancelacion": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    }
-   ],
-   "post": {
-    "tags": [
-     "Documentos"
-    ],
-    "summary": "Cancelar varios documentos en una sola orden",
-    "description": "Hasta 25 documentos, cada uno con su motivo (01 a 04; el 01 requiere `uuidSustituto`).",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/Lote"
-       },
-       "example": {
-        "documentos": [
-         {
-          "concepto": "5",
-          "serie": "A",
-          "folio": 1,
-          "motivo": "02"
-         },
-         {
-          "concepto": "5",
-          "serie": "A",
-          "folio": 2,
-          "motivo": "02"
-         }
-        ]
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "$ref": "#/components/responses/Resultado"
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
-     }
-    }
-   }
-  },
-  "/api/empresas/{empresa}/documentos/{concepto}/{serie}/{folio}": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/concepto"
-    },
-    {
-     "$ref": "#/components/parameters/serie"
-    },
-    {
-     "$ref": "#/components/parameters/folio"
-    }
-   ],
+  "/api/empresas/{empresa}/documentos/buscar": {
    "get": {
     "tags": [
      "Documentos"
     ],
-    "summary": "Consultar un documento",
+    "summary": "Buscar factura por concepto, serie y folio",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/empresa"
+     },
+     {
+      "name": "concepto",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "serie",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "folio",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
     "responses": {
      "200": {
       "$ref": "#/components/responses/Resultado"
      },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/documentos/{concepto}/{serie}/{folio}/timbrado": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/concepto"
-    },
-    {
-     "$ref": "#/components/parameters/serie"
-    },
-    {
-     "$ref": "#/components/parameters/folio"
-    }
-   ],
-   "post": {
-    "tags": [
-     "Documentos"
-    ],
-    "summary": "Timbrar un documento",
-    "description": "Timbra el documento con el PAC (gasta un timbre). La respuesta trae el UUID y el XML timbrado en texto plano, en el campo `xml`.",
-    "responses": {
-     "200": {
-      "description": "Documento timbrado.",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Timbrado"
-        }
-       }
-      }
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
-     }
-    }
-   }
-  },
-  "/api/empresas/{empresa}/documentos/{concepto}/{serie}/{folio}/xml": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/concepto"
-    },
-    {
-     "$ref": "#/components/parameters/serie"
-    },
-    {
-     "$ref": "#/components/parameters/folio"
-    }
-   ],
+  "/api/documentos/{id}/consultar": {
    "get": {
     "tags": [
      "Documentos"
     ],
-    "summary": "Obtener el XML timbrado",
-    "responses": {
-     "200": {
-      "description": "XML del CFDI en texto plano.",
-      "content": {
-       "application/xml": {
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
+    "summary": "Consultar factura",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
      }
-    }
-   }
-  },
-  "/api/empresas/{empresa}/documentos/{concepto}/{serie}/{folio}/pdf": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/concepto"
-    },
-    {
-     "$ref": "#/components/parameters/serie"
-    },
-    {
-     "$ref": "#/components/parameters/folio"
-    }
-   ],
-   "get": {
-    "tags": [
-     "Documentos"
     ],
-    "summary": "Obtener el PDF de la factura",
     "responses": {
      "200": {
-      "description": "Archivo PDF.",
-      "content": {
-       "application/pdf": {
-        "schema": {
-         "type": "string",
-         "format": "binary"
-        }
-       }
-      }
-     },
-     "202": {
-      "$ref": "#/components/responses/EnCurso"
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
+      "$ref": "#/components/responses/Resultado"
      },
      "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
-     "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/empresas/{empresa}/documentos/{concepto}/{serie}/{folio}/cancelacion": {
-   "parameters": [
-    {
-     "$ref": "#/components/parameters/empresa"
-    },
-    {
-     "$ref": "#/components/parameters/concepto"
-    },
-    {
-     "$ref": "#/components/parameters/serie"
-    },
-    {
-     "$ref": "#/components/parameters/folio"
-    }
-   ],
+  "/api/documentos/{id}/timbrar": {
    "post": {
     "tags": [
      "Documentos"
     ],
-    "summary": "Cancelar un documento timbrado",
-    "description": "Cancela el documento ante el SAT. Motivos 01 (requiere `uuidSustituto`), 02, 03 y 04.",
+    "summary": "Timbrar factura",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "UUID y XML timbrado."
+     },
+     "202": {
+      "$ref": "#/components/responses/EnCurso"
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/documentos/{id}/cancelar": {
+   "post": {
+    "tags": [
+     "Documentos"
+    ],
+    "summary": "Cancelar factura",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -850,25 +625,127 @@
      "202": {
       "$ref": "#/components/responses/EnCurso"
      },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
-     },
-     "404": {
-      "$ref": "#/components/responses/EmpresaNoRegistrada"
-     },
      "422": {
-      "$ref": "#/components/responses/Fallo"
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/sdk/tasks/{tareaId}": {
+  "/api/documentos/{id}/descargar-xml": {
+   "get": {
+    "tags": [
+     "Documentos"
+    ],
+    "summary": "Descargar XML",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "XML del CFDI."
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/documentos/{id}/descargar-pdf": {
+   "get": {
+    "tags": [
+     "Documentos"
+    ],
+    "summary": "Descargar PDF",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "PDF de la factura."
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/documentos/timbrar": {
+   "post": {
+    "tags": [
+     "Documentos"
+    ],
+    "summary": "Timbrar varias facturas",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/VariosTimbrar"
+       },
+       "example": {
+        "documentos": [
+         31,
+         32,
+         33
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Una tarea por factura."
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/documentos/cancelar": {
+   "post": {
+    "tags": [
+     "Documentos"
+    ],
+    "summary": "Cancelar varias facturas",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/VariosCancelar"
+       },
+       "example": {
+        "documentos": [
+         {
+          "id": 31,
+          "motivo": "02"
+         }
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Una tarea por factura."
+     },
+     "422": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/tareas/{tareaId}/consultar": {
    "get": {
     "tags": [
      "Tareas"
     ],
-    "summary": "Consultar una tarea",
-    "description": "Sirve cuando una petición respondió `202`. Con `esperar` la respuesta aguarda a que la tarea termine.",
+    "summary": "Consultar tarea",
     "parameters": [
      {
       "name": "tareaId",
@@ -877,44 +754,27 @@
       "schema": {
        "type": "string"
       }
-     },
-     {
-      "name": "esperar",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "integer",
-       "minimum": 0,
-       "maximum": 120
-      },
-      "description": "Segundos que la respuesta espera a que la tarea termine."
      }
     ],
     "responses": {
      "200": {
-      "description": "Estado y resultado de la tarea."
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
+      "description": "Estado: Pendiente, EnProceso, Completada o Fallida."
      },
      "404": {
-      "description": "No existe la tarea."
+      "$ref": "#/components/responses/Error"
      }
     }
    }
   },
-  "/api/sdk/workers": {
+  "/api/tareas/pendientes": {
    "get": {
     "tags": [
      "Tareas"
     ],
-    "summary": "Listar los workers y si están en línea",
+    "summary": "Listar tareas pendientes",
     "responses": {
      "200": {
-      "description": "Lista de workers."
-     },
-     "401": {
-      "$ref": "#/components/responses/NoAutorizado"
+      "description": "Tareas en espera o en proceso."
      }
     }
    }
@@ -924,8 +784,7 @@
   "securitySchemes": {
    "bearerAuth": {
     "type": "http",
-    "scheme": "bearer",
-    "description": "Llave de API (`ak_…`) o token de `POST /api/auth/token`."
+    "scheme": "bearer"
    }
   },
   "parameters": {
@@ -936,57 +795,40 @@
     "schema": {
      "type": "string",
      "example": "adEMPRESA_EJEMPLO"
-    },
-    "description": "Empresa de CONTPAQi (carpeta de la empresa). Debe estar registrada en Acusa Central."
+    }
    },
-   "codigo": {
-    "name": "codigo",
-    "in": "path",
-    "required": true,
-    "schema": {
-     "type": "string"
-    },
-    "description": "Código en Comercial."
-   },
-   "concepto": {
-    "name": "concepto",
-    "in": "path",
-    "required": true,
-    "schema": {
-     "type": "string",
-     "example": "5"
-    },
-    "description": "Código del concepto de documento."
-   },
-   "serie": {
-    "name": "serie",
-    "in": "path",
-    "required": true,
-    "schema": {
-     "type": "string",
-     "example": "A"
-    },
-    "description": "Serie del documento. Use `-` si no tiene serie."
-   },
-   "folio": {
-    "name": "folio",
+   "id": {
+    "name": "id",
     "in": "path",
     "required": true,
     "schema": {
      "type": "integer",
-     "example": 1
-    },
-    "description": "Folio que devolvió la creación del documento."
+     "format": "int64"
+    }
+   },
+   "idempotencia": {
+    "name": "Idempotency-Key",
+    "in": "header",
+    "required": false,
+    "schema": {
+     "type": "string",
+     "maxLength": 100
+    }
    }
   },
   "responses": {
    "Resultado": {
-    "description": "La operación terminó. Trae `tareaId` y `resultado` con los datos que devolvió Comercial.",
+    "description": "Correcto.",
     "content": {
      "application/json": {
       "schema": {
        "type": "object",
        "properties": {
+        "id": {
+         "type": "integer",
+         "format": "int64",
+         "nullable": true
+        },
         "tareaId": {
          "type": "string"
         },
@@ -999,12 +841,17 @@
     }
    },
    "EnCurso": {
-    "description": "Pasaron 60 segundos y el worker sigue trabajando. Consulte `GET /api/sdk/tasks/{tareaId}` (también en la cabecera `Location`).",
+    "description": "El worker sigue trabajando.",
     "content": {
      "application/json": {
       "schema": {
        "type": "object",
        "properties": {
+        "id": {
+         "type": "integer",
+         "format": "int64",
+         "nullable": true
+        },
         "tareaId": {
          "type": "string"
         },
@@ -1017,88 +864,73 @@
      }
     }
    },
-   "Fallo": {
-    "description": "Datos inválidos (`errors`) o la operación falló en Comercial (`error`, `codigoSdk`).",
+   "Error": {
+    "description": "Error.",
     "content": {
      "application/json": {
       "schema": {
-       "type": "object",
-       "properties": {
-        "errors": {
-         "type": "array",
-         "items": {
-          "type": "string"
-         }
-        },
-        "error": {
-         "type": "string"
-        },
-        "codigoSdk": {
-         "type": "integer",
-         "nullable": true
-        },
-        "tareaId": {
-         "type": "string"
-        }
-       }
+       "$ref": "#/components/schemas/Error"
+      },
+      "example": {
+       "codigo": "validacion",
+       "mensaje": "La solicitud tiene errores de validación.",
+       "detalles": [
+        "Pais no puede estar vacio"
+       ],
+       "idCorrelacion": "9f3c1a7e52b04d68"
       }
      }
     }
-   },
-   "NoAutorizado": {
-    "description": "Falta la cabecera Authorization o la llave no es válida."
-   },
-   "EmpresaNoRegistrada": {
-    "description": "La empresa no está registrada para su cuenta."
    }
   },
   "schemas": {
+   "Error": {
+    "type": "object",
+    "properties": {
+     "codigo": {
+      "type": "string",
+      "enum": [
+       "solicitud_invalida",
+       "no_autorizado",
+       "no_encontrado",
+       "conflicto",
+       "validacion",
+       "operacion_fallida",
+       "error_sdk",
+       "demasiados_intentos",
+       "error_interno"
+      ]
+     },
+     "mensaje": {
+      "type": "string"
+     },
+     "detalles": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "idCorrelacion": {
+      "type": "string"
+     },
+     "codigoSdk": {
+      "type": "integer"
+     },
+     "tareaId": {
+      "type": "string"
+     }
+    }
+   },
    "ClienteNuevo": {
     "type": "object",
     "required": [
      "codigo",
      "razonSocial",
      "rfc",
-     "codigoPostal"
+     "codigoPostal",
+     "pais"
     ],
     "properties": {
-     "codigoPostal": {
-      "type": "string",
-      "description": "Código postal del domicilio fiscal (5 dígitos)",
-      "example": "06600"
-     },
-     "calle": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "numeroExterior": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "numeroInterior": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "colonia": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "municipio": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "ciudad": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "estado": {
-      "type": "string",
-      "description": "Opcional"
-     },
-     "pais": {
-      "type": "string",
-      "description": "Opcional"
-     },
      "codigo": {
       "type": "string"
      },
@@ -1110,35 +942,26 @@
      },
      "tipoCliente": {
       "type": "integer",
-      "description": "1 cliente",
-      "2 cliente/proveedor": null,
-      "3 proveedor": null,
-      "example": 1
+      "enum": [
+       1,
+       2,
+       3
+      ]
      },
      "limiteCredito": {
       "type": "number"
      },
-     "email": {
+     "regimenFiscal": {
       "type": "string"
      },
-     "regimenFiscal": {
-      "type": "string",
-      "description": "Clave SAT",
-      "example": "601"
-     },
      "usoCfdi": {
-      "type": "string",
-      "description": "Clave SAT",
-      "example": "G03"
-     }
-    }
-   },
-   "ClienteCambios": {
-    "type": "object",
-    "properties": {
+      "type": "string"
+     },
      "codigoPostal": {
-      "type": "string",
-      "description": "Código postal del domicilio fiscal (5 dígitos)"
+      "type": "string"
+     },
+     "pais": {
+      "type": "string"
      },
      "calle": {
       "type": "string"
@@ -1160,10 +983,12 @@
      },
      "estado": {
       "type": "string"
-     },
-     "pais": {
-      "type": "string"
-     },
+     }
+    }
+   },
+   "ClienteCambios": {
+    "type": "object",
+    "properties": {
      "razonSocial": {
       "type": "string"
      },
@@ -1173,13 +998,95 @@
      "limiteCredito": {
       "type": "number"
      },
-     "email": {
-      "type": "string"
-     },
      "regimenFiscal": {
       "type": "string"
      },
      "usoCfdi": {
+      "type": "string"
+     }
+    }
+   },
+   "DireccionNueva": {
+    "type": "object",
+    "required": [
+     "codigoPostal",
+     "pais"
+    ],
+    "properties": {
+     "tipoDireccion": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "default": 0,
+      "description": "0 fiscal, 1 envío"
+     },
+     "codigoPostal": {
+      "type": "string"
+     },
+     "pais": {
+      "type": "string"
+     },
+     "calle": {
+      "type": "string"
+     },
+     "numeroExterior": {
+      "type": "string"
+     },
+     "numeroInterior": {
+      "type": "string"
+     },
+     "colonia": {
+      "type": "string"
+     },
+     "municipio": {
+      "type": "string"
+     },
+     "ciudad": {
+      "type": "string"
+     },
+     "estado": {
+      "type": "string"
+     }
+    }
+   },
+   "DireccionCambios": {
+    "type": "object",
+    "properties": {
+     "tipoDireccion": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "default": 0
+     },
+     "codigoPostal": {
+      "type": "string"
+     },
+     "pais": {
+      "type": "string"
+     },
+     "calle": {
+      "type": "string"
+     },
+     "numeroExterior": {
+      "type": "string"
+     },
+     "numeroInterior": {
+      "type": "string"
+     },
+     "colonia": {
+      "type": "string"
+     },
+     "municipio": {
+      "type": "string"
+     },
+     "ciudad": {
+      "type": "string"
+     },
+     "estado": {
       "type": "string"
      }
     }
@@ -1199,9 +1106,7 @@
       "type": "string"
      },
      "unidadBase": {
-      "type": "string",
-      "description": "Debe existir en la empresa",
-      "example": "Pieza"
+      "type": "string"
      },
      "precio1": {
       "type": "number"
@@ -1210,166 +1115,21 @@
       "type": "string"
      },
      "claveSat": {
-      "type": "string",
-      "example": "81112200"
+      "type": "string"
      },
      "tipoProducto": {
       "type": "integer",
-      "description": "1 producto",
-      "2 paquete": null,
-      "3 servicio": null,
-      "example": 3
+      "enum": [
+       1,
+       2,
+       3
+      ]
      },
      "textosExtra": {
       "type": "array",
       "items": {
        "type": "string"
       }
-     }
-    }
-   },
-   "DocumentoNuevo": {
-    "type": "object",
-    "required": [
-     "concepto",
-     "clienteCodigo",
-     "fecha",
-     "formaPago",
-     "usoCfdi",
-     "regimenFiscal",
-     "movimientos"
-    ],
-    "properties": {
-     "concepto": {
-      "type": "string",
-      "example": "5"
-     },
-     "serie": {
-      "type": "string",
-      "example": "A"
-     },
-     "clienteCodigo": {
-      "type": "string"
-     },
-     "fecha": {
-      "type": "string",
-      "format": "date",
-      "description": "aaaa-mm-dd"
-     },
-     "formaPago": {
-      "type": "string",
-      "description": "Clave SAT de forma de pago",
-      "example": "03"
-     },
-     "usoCfdi": {
-      "type": "string",
-      "description": "Clave SAT",
-      "obligatoria": null,
-      "example": "G03"
-     },
-     "regimenFiscal": {
-      "type": "string",
-      "description": "Clave SAT",
-      "obligatoria": null,
-      "example": "601"
-     },
-     "referencia": {
-      "type": "string",
-      "description": "Hasta 20 caracteres; si no se manda",
-      "Acusa genera una": null
-     },
-     "movimientos": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-       "$ref": "#/components/schemas/Movimiento"
-      }
-     }
-    }
-   },
-   "Movimiento": {
-    "type": "object",
-    "required": [
-     "productoCodigo",
-     "unidades",
-     "precio"
-    ],
-    "properties": {
-     "productoCodigo": {
-      "type": "string"
-     },
-     "unidades": {
-      "type": "number",
-      "minimum": 0,
-      "exclusiveMinimum": true
-     },
-     "precio": {
-      "type": "number",
-      "minimum": 0
-     },
-     "almacen": {
-      "type": "string",
-      "description": "Si no se manda",
-      "el almacén por omisión de la cuenta": null
-     },
-     "ivaPorcentaje": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 100,
-      "example": 16
-     },
-     "retencionIvaPorcentaje": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 100
-     },
-     "iepsPorcentaje": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 100
-     }
-    }
-   },
-   "Direccion": {
-    "type": "object",
-    "required": [
-     "codigoPostal"
-    ],
-    "properties": {
-     "tipo": {
-      "type": "string",
-      "enum": [
-       "fiscal",
-       "envio"
-      ],
-      "description": "Por omisión fiscal"
-     },
-     "calle": {
-      "type": "string"
-     },
-     "numeroExterior": {
-      "type": "string"
-     },
-     "numeroInterior": {
-      "type": "string"
-     },
-     "colonia": {
-      "type": "string"
-     },
-     "codigoPostal": {
-      "type": "string"
-     },
-     "municipio": {
-      "type": "string"
-     },
-     "ciudad": {
-      "type": "string"
-     },
-     "estado": {
-      "type": "string"
-     },
-     "pais": {
-      "type": "string"
      }
     }
    },
@@ -1396,7 +1156,90 @@
      }
     }
    },
-   "Lote": {
+   "DocumentoNuevo": {
+    "type": "object",
+    "required": [
+     "concepto",
+     "fecha",
+     "formaPago",
+     "usoCfdi",
+     "regimenFiscal",
+     "movimientos"
+    ],
+    "properties": {
+     "concepto": {
+      "type": "string"
+     },
+     "serie": {
+      "type": "string"
+     },
+     "clienteId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "clienteCodigo": {
+      "type": "string"
+     },
+     "fecha": {
+      "type": "string",
+      "format": "date"
+     },
+     "formaPago": {
+      "type": "string"
+     },
+     "usoCfdi": {
+      "type": "string"
+     },
+     "regimenFiscal": {
+      "type": "string"
+     },
+     "referencia": {
+      "type": "string",
+      "maxLength": 20
+     },
+     "movimientos": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Movimiento"
+      }
+     }
+    }
+   },
+   "Movimiento": {
+    "type": "object",
+    "required": [
+     "unidades",
+     "precio"
+    ],
+    "properties": {
+     "productoId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "productoCodigo": {
+      "type": "string"
+     },
+     "unidades": {
+      "type": "number"
+     },
+     "precio": {
+      "type": "number"
+     },
+     "almacen": {
+      "type": "string"
+     },
+     "ivaPorcentaje": {
+      "type": "number"
+     },
+     "retencionIvaPorcentaje": {
+      "type": "number"
+     },
+     "iepsPorcentaje": {
+      "type": "number"
+     }
+    }
+   },
+   "VariosTimbrar": {
     "type": "object",
     "required": [
      "documentos"
@@ -1404,25 +1247,31 @@
     "properties": {
      "documentos": {
       "type": "array",
-      "minItems": 1,
-      "maxItems": 25,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      }
+     }
+    }
+   },
+   "VariosCancelar": {
+    "type": "object",
+    "required": [
+     "documentos"
+    ],
+    "properties": {
+     "documentos": {
+      "type": "array",
       "items": {
        "type": "object",
        "required": [
-        "concepto",
-        "folio"
+        "id",
+        "motivo"
        ],
        "properties": {
-        "concepto": {
-         "type": "string"
-        },
-        "serie": {
-         "type": "string",
-         "description": "Sin serie",
-         "omítala o use `-`": null
-        },
-        "folio": {
-         "type": "integer"
+        "id": {
+         "type": "integer",
+         "format": "int64"
         },
         "motivo": {
          "type": "string",
@@ -1431,8 +1280,7 @@
           "02",
           "03",
           "04"
-         ],
-         "description": "Solo en cancelación"
+         ]
         },
         "uuidSustituto": {
          "type": "string"
@@ -1458,41 +1306,7 @@
       ]
      },
      "uuidSustituto": {
-      "type": "string",
-      "description": "Obligatorio con el motivo 01"
-     }
-    }
-   },
-   "Timbrado": {
-    "type": "object",
-    "properties": {
-     "tareaId": {
       "type": "string"
-     },
-     "concepto": {
-      "type": "string"
-     },
-     "serie": {
-      "type": "string",
-      "nullable": true
-     },
-     "folio": {
-      "type": "integer"
-     },
-     "uuid": {
-      "type": "string"
-     },
-     "estado": {
-      "type": "string",
-      "example": "timbrada"
-     },
-     "xml": {
-      "type": "string",
-      "nullable": true,
-      "description": "XML del CFDI timbrado en texto plano. Es null si Comercial no lo entregó a tiempo; se pide con GET …/xml."
-     },
-     "resultado": {
-      "type": "object"
      }
     }
    }
