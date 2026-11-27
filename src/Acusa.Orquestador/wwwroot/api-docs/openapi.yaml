@@ -2,14 +2,20 @@ openapi: 3.0.1
 info:
   title: Acusa · API de facturación
   version: v1
-  description: |
-    Facturación electrónica sobre CONTPAQi Comercial.
+  description: 'Facturación electrónica sobre CONTPAQi Comercial.
+
 
     - **Autenticación:** `Authorization: Bearer <llave de API>`.
+
     - **Identificadores:** al crear o buscar se recibe un `id`; las demás rutas lo usan.
+
     - **Respuesta:** hasta 30 s de espera; después `202` con `tareaId`.
-    - **Errores:** `{ codigo, mensaje, detalles, idCorrelacion }`.
+
+    - **Errores:** `{ codigo, detalles, idCorrelacion }`.
+
     - **Duplicados:** `Idempotency-Key` o `referencia` evitan crear dos veces la misma factura.
+
+    '
 servers:
 - url: /
 tags:
@@ -22,160 +28,408 @@ tags:
 paths:
   /api/auth/token:
     post:
-      tags: [Autenticación]
+      tags:
+      - Autenticación
       summary: Obtener un token de una hora
       security: []
       parameters:
-      - { name: x-api-key, in: header, required: true, schema: { type: string } }
+      - name: x-api-key
+        in: header
+        required: true
+        schema:
+          type: string
       responses:
-        '200': { description: Token. }
-        '401': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Token.
+        '401':
+          $ref: '#/components/responses/Error'
   /api/empresas/listar:
     get:
-      tags: [Empresas]
+      tags:
+      - Empresas
       summary: Listar empresas
       responses:
-        '200': { description: 'Empresas con su id: [{ id, nombre }].' }
-        '401': { $ref: '#/components/responses/Error' }
+        '200':
+          description: 'Empresas con su id: [{ id, nombre }].'
+          content:
+            application/json:
+              example:
+              - id: 13
+                nombre: adEMPRESA_EJEMPLO
+        '401':
+          $ref: '#/components/responses/Error'
   /api/empresas/{empresaId}/clientes/crear:
     post:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Crear cliente
-      parameters: [ { $ref: '#/components/parameters/empresa' } ]
+      parameters:
+      - $ref: '#/components/parameters/empresa'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ClienteNuevo' }
-            example: { codigo: CLI0001, razonSocial: Cliente Ejemplo SA de CV, rfc: XAXX010101000, tipoCliente: 1, regimenFiscal: '601', usoCfdi: G03, codigoPostal: '06600', pais: México }
+            schema:
+              $ref: '#/components/schemas/ClienteNuevo'
+            example:
+              codigo: CLI0001
+              razonSocial: Cliente Ejemplo SA de CV
+              rfc: XAXX010101000
+              tipoCliente: 1
+              regimenFiscal: '601'
+              usoCfdi: G03
+              codigoPostal: '06600'
+              pais: México
       responses:
-        '201': { $ref: '#/components/responses/Resultado' }
-        '409': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
+        '201':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado:
+                  codigo: CLI0001
+                  razonSocial: Cliente Ejemplo SA de CV
+                  rfc: XAXX010101000
+                  fechaAlta: 11/26/2026 00:00:00:000
+                  tipo: 1
+                  idMoneda: 1
+                  listaPrecios: 1
+                  estatus: 1
+                  regimenFiscal: '601'
+                  usoCfdi: G03
+                  direccion: &id002
+                    codigoCliente: CLI0001
+                    tipo: 0
+                    calle: null
+                    numeroExterior: null
+                    numeroInterior: null
+                    colonia: null
+                    codigoPostal: '06600'
+                    municipio: null
+                    ciudad: null
+                    estado: null
+                    pais: México
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/empresas/{empresaId}/clientes/buscar:
     get:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Buscar cliente por código
       parameters:
       - $ref: '#/components/parameters/empresa'
-      - { name: codigo, in: query, required: true, schema: { type: string } }
+      - name: codigo
+        in: query
+        required: true
+        schema:
+          type: string
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: &id001
+                  codigo: CLI0001
+                  razonSocial: Cliente Ejemplo SA de CV
+                  rfc: XAXX010101000
+                  fechaAlta: 11/26/2026 00:00:00:000
+                  tipo: 1
+                  idMoneda: 1
+                  listaPrecios: 1
+                  estatus: 1
+                  regimenFiscal: '601'
+                  usoCfdi: G03
+        '422':
+          $ref: '#/components/responses/Error'
   /api/clientes/{id}/consultar:
     get:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Consultar cliente
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: *id001
+        '404':
+          $ref: '#/components/responses/Error'
   /api/clientes/{id}/actualizar:
     patch:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Actualizar cliente
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ClienteCambios' }
-            example: { razonSocial: Cliente Ejemplo SA de CV, regimenFiscal: '601', usoCfdi: G03 }
+            schema:
+              $ref: '#/components/schemas/ClienteCambios'
+            example:
+              razonSocial: Cliente Ejemplo SA de CV
+              regimenFiscal: '601'
+              usoCfdi: G03
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: *id001
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/clientes/{id}/direcciones/consultar:
     get:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Consultar direcciones del cliente
       parameters:
       - $ref: '#/components/parameters/id'
-      - { name: tipoDireccion, in: query, required: false, schema: { type: integer, enum: [0, 1] }, description: '0 fiscal, 1 envío' }
+      - name: tipoDireccion
+        in: query
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+        description: 0 fiscal, 1 envío
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado:
+                - *id002
+        '404':
+          $ref: '#/components/responses/Error'
   /api/clientes/{id}/direcciones/crear:
     post:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Crear dirección del cliente
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DireccionNueva' }
-            example: { tipoDireccion: 1, codigoPostal: '06600', pais: México, calle: Av. Reforma, numeroExterior: '100' }
+            schema:
+              $ref: '#/components/schemas/DireccionNueva'
+            example:
+              tipoDireccion: 1
+              codigoPostal: '06600'
+              pais: México
+              calle: Av. Reforma
+              numeroExterior: '100'
       responses:
-        '201': { $ref: '#/components/responses/Resultado' }
-        '409': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
+        '201':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado:
+                  codigoCliente: CLI0001
+                  tipo: 1
+                  calle: Av. Reforma
+                  numeroExterior: '100'
+                  numeroInterior: null
+                  colonia: null
+                  codigoPostal: '06600'
+                  municipio: null
+                  ciudad: null
+                  estado: null
+                  pais: México
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/clientes/{id}/direcciones/actualizar:
     patch:
-      tags: [Clientes]
+      tags:
+      - Clientes
       summary: Actualizar dirección del cliente
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DireccionCambios' }
-            example: { tipoDireccion: 0, calle: Av. Insurgentes }
+            schema:
+              $ref: '#/components/schemas/DireccionCambios'
+            example:
+              tipoDireccion: 0
+              calle: Av. Insurgentes
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 12
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado:
+                  codigoCliente: CLI0001
+                  tipo: 0
+                  calle: Av. Insurgentes
+                  numeroExterior: null
+                  numeroInterior: null
+                  colonia: null
+                  codigoPostal: '06600'
+                  municipio: null
+                  ciudad: null
+                  estado: null
+                  pais: México
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/empresas/{empresaId}/productos/crear:
     post:
-      tags: [Productos]
+      tags:
+      - Productos
       summary: Crear producto
-      parameters: [ { $ref: '#/components/parameters/empresa' } ]
+      parameters:
+      - $ref: '#/components/parameters/empresa'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProductoNuevo' }
-            example: { codigo: SERV0001, nombre: Renta de servidor, unidadBase: Pieza, precio1: 2000, claveSat: '81112200', tipoProducto: 3 }
+            schema:
+              $ref: '#/components/schemas/ProductoNuevo'
+            example:
+              codigo: SERV0001
+              nombre: Renta de servidor
+              unidadBase: Pieza
+              precio1: 2000
+              claveSat: '81112200'
+              tipoProducto: 3
       responses:
-        '201': { $ref: '#/components/responses/Resultado' }
-        '409': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
+        '201':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 15
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: &id003
+                  codigo: SERV0001
+                  nombre: Renta de servidor
+                  descripcion: null
+                  tipo: 3
+                  estatus: 1
+                  precio1: 2000
+                  unidadBase: null
+                  claveSat: '81112200'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/empresas/{empresaId}/productos/buscar:
     get:
-      tags: [Productos]
+      tags:
+      - Productos
       summary: Buscar producto por código
       parameters:
       - $ref: '#/components/parameters/empresa'
-      - { name: codigo, in: query, required: true, schema: { type: string } }
+      - name: codigo
+        in: query
+        required: true
+        schema:
+          type: string
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 15
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: *id003
+        '422':
+          $ref: '#/components/responses/Error'
   /api/productos/{id}/consultar:
     get:
-      tags: [Productos]
+      tags:
+      - Productos
       summary: Consultar producto
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 15
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: *id003
+        '404':
+          $ref: '#/components/responses/Error'
   /api/productos/{id}/actualizar:
     patch:
-      tags: [Productos]
+      tags:
+      - Productos
       summary: Actualizar producto
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProductoCambios' }
-            example: { nombre: Renta de servidor, precio1: 2500 }
+            schema:
+              $ref: '#/components/schemas/ProductoCambios'
+            example:
+              nombre: Renta de servidor
+              precio1: 2500
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 15
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado:
+                  codigo: SERV0001
+                  nombre: Renta de servidor
+                  descripcion: null
+                  tipo: 3
+                  estatus: 1
+                  precio1: 2500
+                  unidadBase: null
+                  claveSat: '81112200'
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/empresas/{empresaId}/documentos/crear:
     post:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Crear factura
       parameters:
       - $ref: '#/components/parameters/empresa'
@@ -185,7 +439,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DocumentoNuevo' }
+            schema:
+              $ref: '#/components/schemas/DocumentoNuevo'
             example:
               concepto: '5'
               clienteId: 12
@@ -195,120 +450,342 @@ paths:
               regimenFiscal: '601'
               referencia: FAC-0001
               movimientos:
-              - { productoId: 15, unidades: 2, precio: 2000, ivaPorcentaje: 16 }
+              - productoId: 15
+                unidades: 2
+                precio: 2000
+                ivaPorcentaje: 16
       responses:
-        '201': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '422': { $ref: '#/components/responses/Error' }
+        '201':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 31
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: &id004
+                  id: 65
+                  concepto: '5'
+                  serie: null
+                  folio: 65
+                  fecha: 11/26/2026 00:00:00:000
+                  clienteCodigo: CLI0001
+                  referencia: FAC-0001
+                  neto: 4000
+                  total: 4640
+                  cancelado: false
+                  uuid: null
+        '202':
+          $ref: '#/components/responses/EnCurso'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/empresas/{empresaId}/documentos/buscar:
     get:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Buscar factura por concepto, serie y folio
       parameters:
       - $ref: '#/components/parameters/empresa'
-      - { name: concepto, in: query, required: true, schema: { type: string } }
-      - { name: serie, in: query, required: false, schema: { type: string } }
-      - { name: folio, in: query, required: true, schema: { type: integer } }
+      - name: concepto
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: serie
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: folio
+        in: query
+        required: true
+        schema:
+          type: integer
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 31
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: *id004
+        '422':
+          $ref: '#/components/responses/Error'
   /api/documentos/{id}/consultar:
     get:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Consultar factura
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '404': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 31
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado: *id004
+        '404':
+          $ref: '#/components/responses/Error'
   /api/documentos/{id}/timbrar:
     post:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Timbrar factura
-      parameters: [ { $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/esperar' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
+      - $ref: '#/components/parameters/esperar'
       responses:
-        '200': { description: 'UUID y XML timbrado.' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: UUID y XML timbrado.
+          content:
+            application/json:
+              example:
+                id: 31
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                concepto: '5'
+                serie: null
+                folio: 65
+                uuid: 6f1c2a0e-5e67-4be9-9e2b-d16ec80023db
+                estado: timbrada
+                xml: <?xml version="1.0" encoding="utf-8"?><cfdi:Comprobante Version="4.0" …>…</cfdi:Comprobante>
+                resultado:
+                  documento: &id006
+                    id: 65
+                    concepto: '5'
+                    serie: null
+                    folio: 65
+                    fecha: 11/26/2026 00:00:00:000
+                    clienteCodigo: CLI0001
+                    referencia: FAC-0001
+                    neto: 4000
+                    total: 4640
+                    cancelado: false
+                    uuid: 6f1c2a0e-5e67-4be9-9e2b-d16ec80023db
+                  uuid: 6f1c2a0e-5e67-4be9-9e2b-d16ec80023db
+                  aviso: null
+        '202':
+          $ref: '#/components/responses/EnCurso'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/documentos/{id}/cancelar:
     post:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Cancelar factura
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/Cancelacion' }
-            example: { motivo: '02' }
+            schema:
+              $ref: '#/components/schemas/Cancelacion'
+            example:
+              motivo: '02'
       responses:
-        '200': { $ref: '#/components/responses/Resultado' }
-        '202': { $ref: '#/components/responses/EnCurso' }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Correcto.
+          content:
+            application/json:
+              example:
+                id: 31
+                tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                resultado:
+                  documento:
+                    id: 65
+                    concepto: '5'
+                    serie: null
+                    folio: 65
+                    fecha: 11/26/2026 00:00:00:000
+                    clienteCodigo: CLI0001
+                    referencia: FAC-0001
+                    neto: 4000
+                    total: 4640
+                    cancelado: true
+                    uuid: 6f1c2a0e-5e67-4be9-9e2b-d16ec80023db
+                  uuid: 6f1c2a0e-5e67-4be9-9e2b-d16ec80023db
+                  aviso: null
+        '202':
+          $ref: '#/components/responses/EnCurso'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/documentos/{id}/descargar-xml:
     get:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Descargar XML
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       responses:
-        '200': { description: XML del CFDI. }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: XML del CFDI.
+        '422':
+          $ref: '#/components/responses/Error'
   /api/documentos/{id}/descargar-pdf:
     get:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Descargar PDF
-      parameters: [ { $ref: '#/components/parameters/id' } ]
+      parameters:
+      - $ref: '#/components/parameters/id'
       responses:
-        '200': { description: PDF de la factura. }
-        '422': { $ref: '#/components/responses/Error' }
+        '200':
+          description: PDF de la factura.
+        '422':
+          $ref: '#/components/responses/Error'
   /api/documentos/timbrar:
     post:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Timbrar varias facturas
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/VariosTimbrar' }
-            example: { documentos: [31, 32, 33] }
+            schema:
+              $ref: '#/components/schemas/VariosTimbrar'
+            example:
+              documentos:
+              - 31
+              - 32
+              - 33
       responses:
-        '202': { description: 'Una tarea por factura.' }
-        '422': { $ref: '#/components/responses/Error' }
+        '202':
+          description: Una tarea por factura.
+          content:
+            application/json:
+              example: &id005
+                estado: EnProceso
+                mensaje: Los documentos se procesan en segundo plano; consulte cada tarea o las pendientes.
+                tareas:
+                - documentoId: 31
+                  tareaId: 0e5acca27e5e456eb81ab602b03bd319
+                  error: null
+                - documentoId: 32
+                  tareaId: 4592ada2f585491abb04137f7cb81836
+                  error: null
+        '422':
+          $ref: '#/components/responses/Error'
   /api/documentos/cancelar:
     post:
-      tags: [Documentos]
+      tags:
+      - Documentos
       summary: Cancelar varias facturas
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/VariosCancelar' }
-            example: { documentos: [ { id: 31, motivo: '02' } ] }
+            schema:
+              $ref: '#/components/schemas/VariosCancelar'
+            example:
+              documentos:
+              - id: 31
+                motivo: '02'
       responses:
-        '202': { description: 'Una tarea por factura.' }
-        '422': { $ref: '#/components/responses/Error' }
+        '202':
+          description: Una tarea por factura.
+          content:
+            application/json:
+              example: *id005
+        '422':
+          $ref: '#/components/responses/Error'
   /api/tareas/{tareaId}/consultar:
     get:
-      tags: [Tareas]
+      tags:
+      - Tareas
       summary: Consultar tarea
       parameters:
-      - { name: tareaId, in: path, required: true, schema: { type: string } }
+      - name: tareaId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        '200': { description: 'Estado: Pendiente, EnProceso, Completada o Fallida.' }
-        '404': { $ref: '#/components/responses/Error' }
+        '200':
+          description: 'Estado: Pendiente, EnProceso, Completada o Fallida.'
+          content:
+            application/json:
+              example:
+                id: 0e5acca27e5e456eb81ab602b03bd319
+                tipoProceso: documento.emitir
+                empresa: adEMPRESA_EJEMPLO
+                estado: Completada
+                intentos: 1
+                creada: '2026-11-26T19:28:37.0156351Z'
+                iniciada: '2026-11-26T19:28:38.1017881Z'
+                terminada: '2026-11-26T19:28:41.717306Z'
+                resultado:
+                  documento: *id006
+                  uuid: 6f1c2a0e-5e67-4be9-9e2b-d16ec80023db
+                  aviso: null
+                error: null
+                codigoSdk: null
+                peticion: POST /api/documentos/timbrar
+        '404':
+          $ref: '#/components/responses/Error'
   /api/tareas/pendientes:
     get:
-      tags: [Tareas]
+      tags:
+      - Tareas
       summary: Listar tareas pendientes
       responses:
-        '200': { description: Tareas en espera o en proceso. }
+        '200':
+          description: Tareas en espera o en proceso.
+          content:
+            application/json:
+              example:
+              - id: 0e5acca27e5e456eb81ab602b03bd319
+                tipoProceso: documento.emitir
+                empresa: adEMPRESA_EJEMPLO
+                estado: Pendiente
+                intentos: 0
+                creada: '2026-11-26T19:28:37.0156351Z'
+                iniciada: null
+                terminada: null
+                resultado: null
+                error: null
+                codigoSdk: null
+                peticion: POST /api/documentos/timbrar
 components:
   securitySchemes:
-    bearerAuth: { type: http, scheme: bearer }
+    bearerAuth:
+      type: http
+      scheme: bearer
   parameters:
-    empresa: { name: empresaId, in: path, required: true, schema: { type: integer, format: int64 }, description: 'id de la empresa, de /api/empresas/listar' }
-    id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-    idempotencia: { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 100 } }
-    esperar: { name: esperar, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30 }, description: 'Segundos de espera (1 a 30)' }
+    empresa:
+      name: empresaId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+      description: id de la empresa, de /api/empresas/listar
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    idempotencia:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 100
+    esperar:
+      name: esperar
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 30
+      description: Segundos de espera (1 a 30)
   responses:
     Resultado:
       description: Correcto.
@@ -317,9 +794,14 @@ components:
           schema:
             type: object
             properties:
-              id: { type: integer, format: int64, nullable: true }
-              tareaId: { type: string }
-              resultado: { type: object }
+              id:
+                type: integer
+                format: int64
+                nullable: true
+              tareaId:
+                type: string
+              resultado:
+                type: object
     EnCurso:
       description: El worker sigue trabajando.
       content:
@@ -327,149 +809,319 @@ components:
           schema:
             type: object
             properties:
-              id: { type: integer, format: int64, nullable: true }
-              tareaId: { type: string }
-              estado: { type: string, example: EnProceso }
+              id:
+                type: integer
+                format: int64
+                nullable: true
+              tareaId:
+                type: string
+              estado:
+                type: string
+                example: EnProceso
+          example:
+            id: null
+            tareaId: 0e5acca27e5e456eb81ab602b03bd319
+            estado: EnProceso
+            mensaje: El worker sigue trabajando; consulte la tarea.
     Error:
       description: Error.
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-          example: { codigo: validacion, mensaje: La solicitud tiene errores de validación., detalles: ['Pais no puede estar vacio'], idCorrelacion: 9f3c1a7e52b04d68 }
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: validacion
+            detalles:
+            - Pais no puede estar vacio
+            idCorrelacion: 9f3c1a7e52b04d68
   schemas:
     Error:
       type: object
       properties:
-        codigo: { type: string, enum: [solicitud_invalida, no_autorizado, no_encontrado, conflicto, validacion, operacion_fallida, error_sdk, demasiados_intentos, error_interno] }
-        mensaje: { type: string }
-        detalles: { type: array, items: { type: string } }
-        idCorrelacion: { type: string }
-        codigoSdk: { type: integer }
-        tareaId: { type: string }
+        codigo:
+          type: string
+          enum:
+          - solicitud_invalida
+          - no_autorizado
+          - no_encontrado
+          - conflicto
+          - validacion
+          - operacion_fallida
+          - error_sdk
+          - demasiados_intentos
+          - error_interno
+        detalles:
+          type: array
+          items:
+            type: string
+        idCorrelacion:
+          type: string
+        codigoSdk:
+          type: integer
+        tareaId:
+          type: string
     ClienteNuevo:
       type: object
-      required: [codigo, razonSocial, rfc, codigoPostal, pais]
+      required:
+      - codigo
+      - razonSocial
+      - rfc
+      - codigoPostal
+      - pais
       properties:
-        codigo: { type: string }
-        razonSocial: { type: string }
-        rfc: { type: string }
-        tipoCliente: { type: integer, enum: [1, 2, 3] }
-        limiteCredito: { type: number }
-        regimenFiscal: { type: string }
-        usoCfdi: { type: string }
-        codigoPostal: { type: string }
-        pais: { type: string }
-        calle: { type: string }
-        numeroExterior: { type: string }
-        numeroInterior: { type: string }
-        colonia: { type: string }
-        municipio: { type: string }
-        ciudad: { type: string }
-        estado: { type: string }
+        codigo:
+          type: string
+        razonSocial:
+          type: string
+        rfc:
+          type: string
+        tipoCliente:
+          type: integer
+          enum:
+          - 1
+          - 2
+          - 3
+        regimenFiscal:
+          type: string
+        usoCfdi:
+          type: string
+        codigoPostal:
+          type: string
+        pais:
+          type: string
+        calle:
+          type: string
+        numeroExterior:
+          type: string
+        numeroInterior:
+          type: string
+        colonia:
+          type: string
+        municipio:
+          type: string
+        ciudad:
+          type: string
+        estado:
+          type: string
     ClienteCambios:
       type: object
       properties:
-        razonSocial: { type: string }
-        rfc: { type: string }
-        limiteCredito: { type: number }
-        regimenFiscal: { type: string }
-        usoCfdi: { type: string }
+        razonSocial:
+          type: string
+        rfc:
+          type: string
+        regimenFiscal:
+          type: string
+        usoCfdi:
+          type: string
     DireccionNueva:
       type: object
-      required: [codigoPostal, pais]
+      required:
+      - codigoPostal
+      - pais
       properties:
-        tipoDireccion: { type: integer, enum: [0, 1], default: 0, description: '0 fiscal, 1 envío' }
-        codigoPostal: { type: string }
-        pais: { type: string }
-        calle: { type: string }
-        numeroExterior: { type: string }
-        numeroInterior: { type: string }
-        colonia: { type: string }
-        municipio: { type: string }
-        ciudad: { type: string }
-        estado: { type: string }
+        tipoDireccion:
+          type: integer
+          enum:
+          - 0
+          - 1
+          default: 0
+          description: 0 fiscal, 1 envío
+        codigoPostal:
+          type: string
+        pais:
+          type: string
+        calle:
+          type: string
+        numeroExterior:
+          type: string
+        numeroInterior:
+          type: string
+        colonia:
+          type: string
+        municipio:
+          type: string
+        ciudad:
+          type: string
+        estado:
+          type: string
     DireccionCambios:
       type: object
       properties:
-        tipoDireccion: { type: integer, enum: [0, 1], default: 0 }
-        codigoPostal: { type: string }
-        pais: { type: string }
-        calle: { type: string }
-        numeroExterior: { type: string }
-        numeroInterior: { type: string }
-        colonia: { type: string }
-        municipio: { type: string }
-        ciudad: { type: string }
-        estado: { type: string }
+        tipoDireccion:
+          type: integer
+          enum:
+          - 0
+          - 1
+          default: 0
+        codigoPostal:
+          type: string
+        pais:
+          type: string
+        calle:
+          type: string
+        numeroExterior:
+          type: string
+        numeroInterior:
+          type: string
+        colonia:
+          type: string
+        municipio:
+          type: string
+        ciudad:
+          type: string
+        estado:
+          type: string
     ProductoNuevo:
       type: object
-      required: [codigo, nombre, unidadBase]
+      required:
+      - codigo
+      - nombre
+      - unidadBase
       properties:
-        codigo: { type: string }
-        nombre: { type: string }
-        unidadBase: { type: string }
-        precio1: { type: number }
-        descripcion: { type: string }
-        claveSat: { type: string }
-        tipoProducto: { type: integer, enum: [1, 2, 3] }
-        textosExtra: { type: array, items: { type: string } }
+        codigo:
+          type: string
+        nombre:
+          type: string
+        unidadBase:
+          type: string
+        precio1:
+          type: number
+        descripcion:
+          type: string
+        claveSat:
+          type: string
+        tipoProducto:
+          type: integer
+          enum:
+          - 1
+          - 2
+          - 3
+        textosExtra:
+          type: array
+          items:
+            type: string
     ProductoCambios:
       type: object
       properties:
-        nombre: { type: string }
-        descripcion: { type: string }
-        precio1: { type: number }
-        claveSat: { type: string }
-        textosExtra: { type: array, items: { type: string } }
+        nombre:
+          type: string
+        descripcion:
+          type: string
+        precio1:
+          type: number
+        claveSat:
+          type: string
+        textosExtra:
+          type: array
+          items:
+            type: string
     DocumentoNuevo:
       type: object
-      required: [concepto, fecha, formaPago, usoCfdi, regimenFiscal, movimientos]
+      required:
+      - concepto
+      - fecha
+      - formaPago
+      - usoCfdi
+      - regimenFiscal
+      - movimientos
       properties:
-        concepto: { type: string }
-        serie: { type: string }
-        clienteId: { type: integer, format: int64 }
-        clienteCodigo: { type: string }
-        fecha: { type: string, format: date }
-        formaPago: { type: string }
-        usoCfdi: { type: string }
-        regimenFiscal: { type: string }
-        referencia: { type: string, maxLength: 20 }
-        movimientos: { type: array, items: { $ref: '#/components/schemas/Movimiento' } }
+        concepto:
+          type: string
+        serie:
+          type: string
+        clienteId:
+          type: integer
+          format: int64
+        clienteCodigo:
+          type: string
+        fecha:
+          type: string
+          format: date
+        formaPago:
+          type: string
+        usoCfdi:
+          type: string
+        regimenFiscal:
+          type: string
+        referencia:
+          type: string
+          maxLength: 20
+        movimientos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Movimiento'
     Movimiento:
       type: object
-      required: [unidades, precio]
+      required:
+      - unidades
       properties:
-        productoId: { type: integer, format: int64 }
-        productoCodigo: { type: string }
-        unidades: { type: number }
-        precio: { type: number }
-        almacen: { type: string }
-        ivaPorcentaje: { type: number }
-        retencionIvaPorcentaje: { type: number }
-        iepsPorcentaje: { type: number }
+        productoId:
+          type: integer
+          format: int64
+        productoCodigo:
+          type: string
+        unidades:
+          type: number
+        precio:
+          type: number
+          description: Si se omite, se usa el precio del producto.
+        almacen:
+          type: string
+        ivaPorcentaje:
+          type: number
+        retencionIvaPorcentaje:
+          type: number
+        iepsPorcentaje:
+          type: number
     VariosTimbrar:
       type: object
-      required: [documentos]
+      required:
+      - documentos
       properties:
-        documentos: { type: array, items: { type: integer, format: int64 } }
+        documentos:
+          type: array
+          items:
+            type: integer
+            format: int64
     VariosCancelar:
       type: object
-      required: [documentos]
+      required:
+      - documentos
       properties:
         documentos:
           type: array
           items:
             type: object
-            required: [id, motivo]
+            required:
+            - id
+            - motivo
             properties:
-              id: { type: integer, format: int64 }
-              motivo: { type: string, enum: ['01', '02', '03', '04'] }
-              uuidSustituto: { type: string }
+              id:
+                type: integer
+                format: int64
+              motivo:
+                type: string
+                enum:
+                - '01'
+                - '02'
+                - '03'
+                - '04'
+              uuidSustituto:
+                type: string
     Cancelacion:
       type: object
-      required: [motivo]
+      required:
+      - motivo
       properties:
-        motivo: { type: string, enum: ['01', '02', '03', '04'] }
-        uuidSustituto: { type: string }
+        motivo:
+          type: string
+          enum:
+          - '01'
+          - '02'
+          - '03'
+          - '04'
+        uuidSustituto:
+          type: string
 security:
 - bearerAuth: []

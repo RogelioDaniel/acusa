@@ -13,6 +13,12 @@
 
 ## Sin publicar
 
+- Errores con un solo campo de texto: `{ codigo, detalles, idCorrelacion }`. Se quita `mensaje`; su texto va en `detalles`.
+- Timbrar y cancelar varias facturas ya no tienen tope de documentos por petición.
+- El límite de crédito del cliente se guarda siempre en 0; `limiteCredito` deja de aceptarse.
+- Un movimiento sin `precio` usa el precio del producto en CONTPAQi Comercial.
+- Swagger con un ejemplo de respuesta en cada ruta.
+
 - La empresa también va por `id`: `GET /api/empresas/listar` devuelve `[{ id, nombre }]` y las rutas son `/api/empresas/{empresaId}/…`.
   El nombre de la empresa en la ruta responde `404`.
 

@@ -3,7 +3,7 @@
   "info": {
     "title": "Acusa · API de facturación",
     "version": "v1",
-    "description": "Facturación electrónica sobre CONTPAQi Comercial.\n\n- **Autenticación:** `Authorization: Bearer <llave de API>`.\n- **Identificadores:** al crear o buscar se recibe un `id`; las demás rutas lo usan.\n- **Respuesta:** hasta 30 s de espera; después `202` con `tareaId`.\n- **Errores:** `{ codigo, mensaje, detalles, idCorrelacion }`.\n- **Duplicados:** `Idempotency-Key` o `referencia` evitan crear dos veces la misma factura.\n"
+    "description": "Facturación electrónica sobre CONTPAQi Comercial.\n\n- **Autenticación:** `Authorization: Bearer <llave de API>`.\n- **Identificadores:** al crear o buscar se recibe un `id`; las demás rutas lo usan.\n- **Respuesta:** hasta 30 s de espera; después `202` con `tareaId`.\n- **Errores:** `{ codigo, detalles, idCorrelacion }`.\n- **Duplicados:** `Idempotency-Key` o `referencia` evitan crear dos veces la misma factura.\n"
   },
   "servers": [
     {
@@ -66,7 +66,17 @@
         "summary": "Listar empresas",
         "responses": {
           "200": {
-            "description": "Empresas con su id: [{ id, nombre }]."
+            "description": "Empresas con su id: [{ id, nombre }].",
+            "content": {
+              "application/json": {
+                "example": [
+                  {
+                    "id": 13,
+                    "nombre": "adEMPRESA_EJEMPLO"
+                  }
+                ]
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -107,7 +117,40 @@
         },
         "responses": {
           "201": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "CLI0001",
+                    "razonSocial": "Cliente Ejemplo SA de CV",
+                    "rfc": "XAXX010101000",
+                    "fechaAlta": "11/26/2026 00:00:00:000",
+                    "tipo": 1,
+                    "idMoneda": 1,
+                    "listaPrecios": 1,
+                    "estatus": 1,
+                    "regimenFiscal": "601",
+                    "usoCfdi": "G03",
+                    "direccion": {
+                      "codigoCliente": "CLI0001",
+                      "tipo": 0,
+                      "calle": null,
+                      "numeroExterior": null,
+                      "numeroInterior": null,
+                      "colonia": null,
+                      "codigoPostal": "06600",
+                      "municipio": null,
+                      "ciudad": null,
+                      "estado": null,
+                      "pais": "México"
+                    }
+                  }
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/Error"
@@ -139,7 +182,27 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "CLI0001",
+                    "razonSocial": "Cliente Ejemplo SA de CV",
+                    "rfc": "XAXX010101000",
+                    "fechaAlta": "11/26/2026 00:00:00:000",
+                    "tipo": 1,
+                    "idMoneda": 1,
+                    "listaPrecios": 1,
+                    "estatus": 1,
+                    "regimenFiscal": "601",
+                    "usoCfdi": "G03"
+                  }
+                }
+              }
+            }
           },
           "422": {
             "$ref": "#/components/responses/Error"
@@ -160,7 +223,27 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "CLI0001",
+                    "razonSocial": "Cliente Ejemplo SA de CV",
+                    "rfc": "XAXX010101000",
+                    "fechaAlta": "11/26/2026 00:00:00:000",
+                    "tipo": 1,
+                    "idMoneda": 1,
+                    "listaPrecios": 1,
+                    "estatus": 1,
+                    "regimenFiscal": "601",
+                    "usoCfdi": "G03"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -196,7 +279,27 @@
         },
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "CLI0001",
+                    "razonSocial": "Cliente Ejemplo SA de CV",
+                    "rfc": "XAXX010101000",
+                    "fechaAlta": "11/26/2026 00:00:00:000",
+                    "tipo": 1,
+                    "idMoneda": 1,
+                    "listaPrecios": 1,
+                    "estatus": 1,
+                    "regimenFiscal": "601",
+                    "usoCfdi": "G03"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -233,7 +336,30 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": [
+                    {
+                      "codigoCliente": "CLI0001",
+                      "tipo": 0,
+                      "calle": null,
+                      "numeroExterior": null,
+                      "numeroInterior": null,
+                      "colonia": null,
+                      "codigoPostal": "06600",
+                      "municipio": null,
+                      "ciudad": null,
+                      "estado": null,
+                      "pais": "México"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -271,7 +397,28 @@
         },
         "responses": {
           "201": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigoCliente": "CLI0001",
+                    "tipo": 1,
+                    "calle": "Av. Reforma",
+                    "numeroExterior": "100",
+                    "numeroInterior": null,
+                    "colonia": null,
+                    "codigoPostal": "06600",
+                    "municipio": null,
+                    "ciudad": null,
+                    "estado": null,
+                    "pais": "México"
+                  }
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/Error"
@@ -309,7 +456,28 @@
         },
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 12,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigoCliente": "CLI0001",
+                    "tipo": 0,
+                    "calle": "Av. Insurgentes",
+                    "numeroExterior": null,
+                    "numeroInterior": null,
+                    "colonia": null,
+                    "codigoPostal": "06600",
+                    "municipio": null,
+                    "ciudad": null,
+                    "estado": null,
+                    "pais": "México"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -351,7 +519,25 @@
         },
         "responses": {
           "201": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 15,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "SERV0001",
+                    "nombre": "Renta de servidor",
+                    "descripcion": null,
+                    "tipo": 3,
+                    "estatus": 1,
+                    "precio1": 2000,
+                    "unidadBase": null,
+                    "claveSat": "81112200"
+                  }
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/Error"
@@ -383,7 +569,25 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 15,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "SERV0001",
+                    "nombre": "Renta de servidor",
+                    "descripcion": null,
+                    "tipo": 3,
+                    "estatus": 1,
+                    "precio1": 2000,
+                    "unidadBase": null,
+                    "claveSat": "81112200"
+                  }
+                }
+              }
+            }
           },
           "422": {
             "$ref": "#/components/responses/Error"
@@ -404,7 +608,25 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 15,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "SERV0001",
+                    "nombre": "Renta de servidor",
+                    "descripcion": null,
+                    "tipo": 3,
+                    "estatus": 1,
+                    "precio1": 2000,
+                    "unidadBase": null,
+                    "claveSat": "81112200"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -439,7 +661,25 @@
         },
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 15,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "codigo": "SERV0001",
+                    "nombre": "Renta de servidor",
+                    "descripcion": null,
+                    "tipo": 3,
+                    "estatus": 1,
+                    "precio1": 2500,
+                    "unidadBase": null,
+                    "claveSat": "81112200"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -496,7 +736,28 @@
         },
         "responses": {
           "201": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 31,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "id": 65,
+                    "concepto": "5",
+                    "serie": null,
+                    "folio": 65,
+                    "fecha": "11/26/2026 00:00:00:000",
+                    "clienteCodigo": "CLI0001",
+                    "referencia": "FAC-0001",
+                    "neto": 4000,
+                    "total": 4640,
+                    "cancelado": false,
+                    "uuid": null
+                  }
+                }
+              }
+            }
           },
           "202": {
             "$ref": "#/components/responses/EnCurso"
@@ -544,7 +805,28 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 31,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "id": 65,
+                    "concepto": "5",
+                    "serie": null,
+                    "folio": 65,
+                    "fecha": "11/26/2026 00:00:00:000",
+                    "clienteCodigo": "CLI0001",
+                    "referencia": "FAC-0001",
+                    "neto": 4000,
+                    "total": 4640,
+                    "cancelado": false,
+                    "uuid": null
+                  }
+                }
+              }
+            }
           },
           "422": {
             "$ref": "#/components/responses/Error"
@@ -565,7 +847,28 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 31,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "id": 65,
+                    "concepto": "5",
+                    "serie": null,
+                    "folio": 65,
+                    "fecha": "11/26/2026 00:00:00:000",
+                    "clienteCodigo": "CLI0001",
+                    "referencia": "FAC-0001",
+                    "neto": 4000,
+                    "total": 4640,
+                    "cancelado": false,
+                    "uuid": null
+                  }
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -589,7 +892,38 @@
         ],
         "responses": {
           "200": {
-            "description": "UUID y XML timbrado."
+            "description": "UUID y XML timbrado.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 31,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "concepto": "5",
+                  "serie": null,
+                  "folio": 65,
+                  "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db",
+                  "estado": "timbrada",
+                  "xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?><cfdi:Comprobante Version=\"4.0\" …>…</cfdi:Comprobante>",
+                  "resultado": {
+                    "documento": {
+                      "id": 65,
+                      "concepto": "5",
+                      "serie": null,
+                      "folio": 65,
+                      "fecha": "11/26/2026 00:00:00:000",
+                      "clienteCodigo": "CLI0001",
+                      "referencia": "FAC-0001",
+                      "neto": 4000,
+                      "total": 4640,
+                      "cancelado": false,
+                      "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db"
+                    },
+                    "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db",
+                    "aviso": null
+                  }
+                }
+              }
+            }
           },
           "202": {
             "$ref": "#/components/responses/EnCurso"
@@ -626,7 +960,32 @@
         },
         "responses": {
           "200": {
-            "$ref": "#/components/responses/Resultado"
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": 31,
+                  "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                  "resultado": {
+                    "documento": {
+                      "id": 65,
+                      "concepto": "5",
+                      "serie": null,
+                      "folio": 65,
+                      "fecha": "11/26/2026 00:00:00:000",
+                      "clienteCodigo": "CLI0001",
+                      "referencia": "FAC-0001",
+                      "neto": 4000,
+                      "total": 4640,
+                      "cancelado": true,
+                      "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db"
+                    },
+                    "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db",
+                    "aviso": null
+                  }
+                }
+              }
+            }
           },
           "202": {
             "$ref": "#/components/responses/EnCurso"
@@ -704,7 +1063,27 @@
         },
         "responses": {
           "202": {
-            "description": "Una tarea por factura."
+            "description": "Una tarea por factura.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "estado": "EnProceso",
+                  "mensaje": "Los documentos se procesan en segundo plano; consulte cada tarea o las pendientes.",
+                  "tareas": [
+                    {
+                      "documentoId": 31,
+                      "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                      "error": null
+                    },
+                    {
+                      "documentoId": 32,
+                      "tareaId": "4592ada2f585491abb04137f7cb81836",
+                      "error": null
+                    }
+                  ]
+                }
+              }
+            }
           },
           "422": {
             "$ref": "#/components/responses/Error"
@@ -738,7 +1117,27 @@
         },
         "responses": {
           "202": {
-            "description": "Una tarea por factura."
+            "description": "Una tarea por factura.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "estado": "EnProceso",
+                  "mensaje": "Los documentos se procesan en segundo plano; consulte cada tarea o las pendientes.",
+                  "tareas": [
+                    {
+                      "documentoId": 31,
+                      "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+                      "error": null
+                    },
+                    {
+                      "documentoId": 32,
+                      "tareaId": "4592ada2f585491abb04137f7cb81836",
+                      "error": null
+                    }
+                  ]
+                }
+              }
+            }
           },
           "422": {
             "$ref": "#/components/responses/Error"
@@ -764,7 +1163,41 @@
         ],
         "responses": {
           "200": {
-            "description": "Estado: Pendiente, EnProceso, Completada o Fallida."
+            "description": "Estado: Pendiente, EnProceso, Completada o Fallida.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": "0e5acca27e5e456eb81ab602b03bd319",
+                  "tipoProceso": "documento.emitir",
+                  "empresa": "adEMPRESA_EJEMPLO",
+                  "estado": "Completada",
+                  "intentos": 1,
+                  "creada": "2026-11-26T19:28:37.0156351Z",
+                  "iniciada": "2026-11-26T19:28:38.1017881Z",
+                  "terminada": "2026-11-26T19:28:41.717306Z",
+                  "resultado": {
+                    "documento": {
+                      "id": 65,
+                      "concepto": "5",
+                      "serie": null,
+                      "folio": 65,
+                      "fecha": "11/26/2026 00:00:00:000",
+                      "clienteCodigo": "CLI0001",
+                      "referencia": "FAC-0001",
+                      "neto": 4000,
+                      "total": 4640,
+                      "cancelado": false,
+                      "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db"
+                    },
+                    "uuid": "6f1c2a0e-5e67-4be9-9e2b-d16ec80023db",
+                    "aviso": null
+                  },
+                  "error": null,
+                  "codigoSdk": null,
+                  "peticion": "POST /api/documentos/timbrar"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -780,7 +1213,27 @@
         "summary": "Listar tareas pendientes",
         "responses": {
           "200": {
-            "description": "Tareas en espera o en proceso."
+            "description": "Tareas en espera o en proceso.",
+            "content": {
+              "application/json": {
+                "example": [
+                  {
+                    "id": "0e5acca27e5e456eb81ab602b03bd319",
+                    "tipoProceso": "documento.emitir",
+                    "empresa": "adEMPRESA_EJEMPLO",
+                    "estado": "Pendiente",
+                    "intentos": 0,
+                    "creada": "2026-11-26T19:28:37.0156351Z",
+                    "iniciada": null,
+                    "terminada": null,
+                    "resultado": null,
+                    "error": null,
+                    "codigoSdk": null,
+                    "peticion": "POST /api/documentos/timbrar"
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -878,6 +1331,12 @@
                   "example": "EnProceso"
                 }
               }
+            },
+            "example": {
+              "id": null,
+              "tareaId": "0e5acca27e5e456eb81ab602b03bd319",
+              "estado": "EnProceso",
+              "mensaje": "El worker sigue trabajando; consulte la tarea."
             }
           }
         }
@@ -891,7 +1350,6 @@
             },
             "example": {
               "codigo": "validacion",
-              "mensaje": "La solicitud tiene errores de validación.",
               "detalles": [
                 "Pais no puede estar vacio"
               ],
@@ -918,9 +1376,6 @@
               "demasiados_intentos",
               "error_interno"
             ]
-          },
-          "mensaje": {
-            "type": "string"
           },
           "detalles": {
             "type": "array",
@@ -966,9 +1421,6 @@
               3
             ]
           },
-          "limiteCredito": {
-            "type": "number"
-          },
           "regimenFiscal": {
             "type": "string"
           },
@@ -1012,9 +1464,6 @@
           },
           "rfc": {
             "type": "string"
-          },
-          "limiteCredito": {
-            "type": "number"
           },
           "regimenFiscal": {
             "type": "string"
@@ -1226,8 +1675,7 @@
       "Movimiento": {
         "type": "object",
         "required": [
-          "unidades",
-          "precio"
+          "unidades"
         ],
         "properties": {
           "productoId": {
@@ -1241,7 +1689,8 @@
             "type": "number"
           },
           "precio": {
-            "type": "number"
+            "type": "number",
+            "description": "Si se omite, se usa el precio del producto."
           },
           "almacen": {
             "type": "string"

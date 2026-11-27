@@ -349,24 +349,6 @@ portal.MapDelete("/empresas/{nombre}", (string nombre, HttpContext http, Almacen
     Autenticar(http, a, seguridad, Roles.Portal) is not { } quien ? Errores.NoAutorizado()
     : a.QuitarEmpresa(quien.ClienteId, nombre) ? Results.NoContent() : Errores.Json(404, "No existe esa empresa."));
 
-portal.MapGet("/ajustes/lote", (HttpContext http, Almacen a, Seguridad seguridad, Opciones o) =>
-{
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
-    return Results.Ok(new { maximo = a.LeerAjusteEntero(quien.ClienteId, Almacen.AjusteMaximoPorLote) ?? o.MaximoDocumentosPorLote });
-});
-
-portal.MapPut("/ajustes/lote", (SolicitudMaximoPorLote cuerpo, HttpContext http, Almacen a, Seguridad seguridad) =>
-{
-    if (Autenticar(http, a, seguridad, Roles.Portal) is not { } quien) return Errores.NoAutorizado();
-    if (cuerpo.Maximo < 1 || cuerpo.Maximo > 5000)
-    {
-        return Errores.Json(400, "El máximo de documentos por lote debe estar entre 1 y 5000.");
-    }
-
-    a.GuardarAjusteEntero(quien.ClienteId, Almacen.AjusteMaximoPorLote, cuerpo.Maximo);
-    return Results.Ok(new { maximo = cuerpo.Maximo });
-});
-
 portal.MapGet("/llaves", (HttpContext http, Almacen a, Seguridad seguridad) =>
     Autenticar(http, a, seguridad, Roles.Portal) is { } quien ? Results.Ok(a.ListarLlaves(quien.ClienteId)) : Errores.NoAutorizado());
 
@@ -605,8 +587,6 @@ public sealed record SolicitudCliente(string Nombre);
 /// <summary>Cuerpo de <c>POST /admin/clientes/{id}/empresas</c> y <c>POST /api/portal/empresas</c>.</summary>
 public sealed record SolicitudEmpresa(string Nombre);
 
-public sealed record SolicitudMaximoPorLote(int Maximo);
-
 /// <summary>Cuerpo para crear una llave. <c>Nombre</c> es una etiqueta libre para reconocerla en el portal.</summary>
 public sealed record SolicitudLlave(string Rol, string? Nombre = null);
 
@@ -681,7 +661,6 @@ public sealed class Opciones
 
     public int FacturacionEsperaMaximaSegundos { get; set; } = 30;
 
-    public int MaximoDocumentosPorLote { get; set; } = 500;
 
     /// <summary>Empresa de CONTPAQi donde se crean clientes y productos cuando no se indica una emisora. Vacía: la primera registrada.</summary>
     public string FacturacionEmpresa { get; set; } = string.Empty;

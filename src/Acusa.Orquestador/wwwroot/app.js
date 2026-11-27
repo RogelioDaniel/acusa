@@ -64,8 +64,7 @@ function aviso(texto) {
 // Error de la API: { codigo, mensaje, detalles[], idCorrelacion }. Se muestra el mensaje y, si hay, cada detalle.
 function textoDeError(c) {
   if (!c) return "";
-  const detalles = Array.isArray(c.detalles) && c.detalles.length ? " " + c.detalles.join(" · ") : "";
-  return (c.mensaje || c.title || "") + detalles;
+  return (Array.isArray(c.detalles) && c.detalles.length ? c.detalles.join(" · ") : c.title || "");
 }
 
 async function copiar(texto) {
@@ -471,7 +470,7 @@ function vistaDevs(raiz) {
       bloque("Autenticación", "Authorization: Bearer <llave de API ak_…>"),
       bloque("Flujo de una factura", "clientes/crear  →  productos/crear  →  documentos/crear  →  documentos/{id}/timbrar  →  documentos/{id}/descargar-xml"),
       bloque("Respuesta de timbrado", `{ "uuid": "…", "estado": "timbrada", "xml": "<cfdi:Comprobante …>" }`),
-      h("p", { class: "nota", style: "margin-top:10px" }, "Espera hasta 30 s; después responde 202 con la tarea. Errores: { codigo, mensaje, detalles }.")),
+      h("p", { class: "nota", style: "margin-top:10px" }, "Espera hasta 30 s; después responde 202 con la tarea. Errores: { codigo, detalles }.")),
     tarjetaSesion(),
     catalogo);
 
@@ -558,7 +557,7 @@ function flujoCompleto() {
     const D = () => `/api/documentos/${ctx.documento}`;
     const llamar = async (m, ruta, c) => { const r = await enviar(m, ruta, c ? JSON.stringify(c) : null); recordar(m, ruta, c ? JSON.stringify(c) : "", r); return { ...r, ruta: `${m} ${ruta}` }; };
     const pasos = [
-      ["Cliente", async () => { ctx.cliente = "ACUSACL" + sufijo; return llamar("POST", `${E}/clientes/crear`, { codigo: ctx.cliente, razonSocial: "CLIENTE ACUSA", rfc: "XAXX010101000", tipoCliente: 1, limiteCredito: 1000, codigoPostal: "06600", pais: "México" }); }],
+      ["Cliente", async () => { ctx.cliente = "ACUSACL" + sufijo; return llamar("POST", `${E}/clientes/crear`, { codigo: ctx.cliente, razonSocial: "CLIENTE ACUSA", rfc: "XAXX010101000", tipoCliente: 1, codigoPostal: "06600", pais: "México" }); }],
       ["Producto de $1", async () => { ctx.producto = "ACUSAPR" + sufijo; return llamar("POST", `${E}/productos/crear`, { codigo: ctx.producto, nombre: "SERVICIO UN PESO", unidadBase: "Pieza", precio1: 1, claveSat: "81112200", tipoProducto: 3 }); }],
       ["Documento", async () => {
         const r = await llamar("POST", `${E}/documentos/crear`, { concepto: "5", serie: "ACUSA", clienteCodigo: ctx.cliente, referencia: "ACUSAFAC" + sufijo, fecha: hoy, formaPago: "03", usoCfdi: "S01", regimenFiscal: "616", movimientos: [{ productoCodigo: ctx.producto, unidades: 1, precio: 1, ivaPorcentaje: 16, retencionIvaPorcentaje: 0, iepsPorcentaje: 0 }] });
@@ -712,16 +711,7 @@ function vistaConfig(raiz) {
     } catch (e) { falla(lista)(e); }
   }
 
-  const maximo = h("input", { type: "number", min: "1", max: "5000", required: true, "aria-label": "Máximo de documentos por lote" });
-  const lote = h("form", { class: "fila-acciones", onsubmit: async (e) => {
-    e.preventDefault();
-    try { await api("/api/portal/ajustes/lote", { method: "PUT", body: JSON.stringify({ maximo: Number(maximo.value) }) }); aviso("Máximo por lote guardado"); }
-    catch (err) { aviso(err.message); }
-  } }, h("label", { class: "campo" }, h("span", null, "Máximo de documentos por lote"), maximo), h("button", { class: "boton", type: "submit", style: "margin-bottom:12px" }, "Guardar"));
-  api("/api/portal/ajustes/lote").then((a) => { maximo.value = a.maximo; }).catch(() => {});
-
   raiz.append(encabezado("Configuración", `Su cuenta (${u.email || "—"}) y las empresas que atiende ${PRODUCTO}.`),
-    h("div", { class: "tarjeta", style: "max-width:460px" }, h("h2", null, "Timbrado y cancelación por lote"), h("p", { class: "sub" }, "Cuántas facturas acepta una sola petición de timbrar o cancelar varias."), lote),
     h("div", { class: "tarjeta" }, h("h2", null, "Empresas"), h("p", { class: "sub" }, "Un worker solo atiende empresas registradas aquí. El nombre es el de la carpeta de la empresa en CONTPAQi."), alta, lista),
     h("div", { class: "tarjeta", style: "max-width:460px" }, h("h2", null, "Cambiar contraseña"), clave));
   cargar();

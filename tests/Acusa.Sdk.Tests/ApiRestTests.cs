@@ -82,6 +82,11 @@ public sealed class ApiRestTests : IDisposable
                 return new ResultadoOrden(false, null, "Ya existe el cliente EXISTE.", null, false, tareaId);
             }
 
+            if (tipo == Operaciones.ProductoLeer)
+            {
+                return Correcto(JsonSerializer.SerializeToElement(new { codigo = datos.GetProperty("codigo").GetString(), precio1 = 25 }), tareaId);
+            }
+
             if (tipo == Operaciones.DocumentoCrear)
             {
                 return Correcto(JsonSerializer.SerializeToElement(new { id = 40, concepto = datos.GetProperty("concepto").GetString(), serie = "A", folio = 7 }), tareaId);
@@ -120,7 +125,6 @@ public sealed class ApiRestTests : IDisposable
             constructor.UseSetting("Orquestador:BaseDatos", _base);
             constructor.UseSetting("Orquestador:SecretoJwt", "secreto-de-prueba-con-mas-de-32-caracteres!!");
             constructor.UseSetting("Orquestador:ClaveAdmin", "clave-admin-de-prueba-16+");
-            constructor.UseSetting("Orquestador:MaximoDocumentosPorLote", "3");
             constructor.ConfigureTestServices(servicios => servicios.AddSingleton<IEjecutorOrdenes>(_worker));
         });
         _http = _fabrica.CreateClient();
@@ -186,14 +190,53 @@ public sealed class ApiRestTests : IDisposable
         (await respuesta.Content.ReadFromJsonAsync<ErrorApi>(new JsonSerializerOptions(JsonSerializerDefaults.Web)))!;
 
     [Fact]
-    public async Task TimbrarVarios_ConMaximoPorLoteDelCliente_RechazaLoQueLoExcede()
+    public async Task TimbrarVarios_SinDocumentos_Responde422()
     {
-        _almacen.GuardarAjusteEntero(_clienteId, Almacen.AjusteMaximoPorLote, 2);
-
-        var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = new[] { 1, 2, 3 } });
+        var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = Array.Empty<int>() });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
-        Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("entre 1 y 2"));
+        Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("al menos uno"));
+    }
+
+    [Fact]
+    public async Task Error_SoloTraeDetalles_SinCampoMensaje()
+    {
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/clientes/crear", new { codigo = "EXISTE", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600", pais = "México" });
+
+        var cuerpo = await respuesta.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
+        Assert.False(cuerpo.TryGetProperty("mensaje", out _));
+        Assert.Contains("Ya existe", cuerpo.GetProperty("detalles")[0].GetString());
+    }
+
+    [Fact]
+    public async Task CrearCliente_ConLimiteDeCredito_MandaCeroAlWorker()
+    {
+        await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/clientes/crear", new { codigo = "CLI8", razonSocial = "X", rfc = "XAXX010101000", codigoPostal = "06600", pais = "México", limiteCredito = 5000 });
+
+        var creacion = Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.ClienteCrear);
+        Assert.Equal(0, creacion.Payload.GetProperty("limiteCredito").GetInt32());
+    }
+
+    [Fact]
+    public async Task CrearDocumento_MovimientoSinPrecio_UsaElPrecioDelProducto()
+    {
+        await CrearClienteAsync();
+
+        var respuesta = await _http.PostAsJsonAsync($"/api/empresas/{Empresa1}/documentos/crear", new
+        {
+            concepto = "5",
+            clienteCodigo = "CLI1",
+            fecha = "2026-11-25",
+            formaPago = "01",
+            usoCfdi = "G03",
+            regimenFiscal = "601",
+            movimientos = new[] { new { productoCodigo = "PR1", unidades = 1 } },
+        });
+
+        Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
+        var creacion = Assert.Single(_worker.Ordenes, orden => orden.Tipo == Operaciones.DocumentoCrear);
+        Assert.Equal(25m, creacion.Payload.GetProperty("partidas")[0].GetProperty("precio").GetDecimal());
     }
 
     [Fact]

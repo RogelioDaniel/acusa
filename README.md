@@ -51,7 +51,7 @@ Acusa; el resto de las operaciones usan ese `id` sin repetir la empresa.
 Autenticación: `Authorization: Bearer <llave de API>` (empieza con `ak_`) o un token de `POST /api/auth/token`. Cada petición espera al
 worker hasta 30 segundos (`?esperar=N` la reduce; configurable con `Orquestador__FacturacionEsperaSegundos`): si responde, la misma
 respuesta trae el resultado; si no, responde `202` con la tarea. El timbrado y la cancelación de varios documentos responden `202` de
-inmediato con una tarea por documento (máximo configurable con `Orquestador__MaximoDocumentosPorLote`, 500 por omisión). Con la
+inmediato con una tarea por documento. Con la
 cabecera `Idempotency-Key`, repetir una escritura no la duplica. Todo error responde con el mismo cuerpo,
 `{ "codigo", "mensaje", "detalles": [ … ], "idCorrelacion" }`; el identificador también viaja en la cabecera `X-Correlation-Id`.
 

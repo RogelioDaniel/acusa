@@ -270,7 +270,7 @@ public static class ApiRest
         var id = contexto.Almacen.RegistrarRecurso(contexto.Quien.ClienteId, TipoCliente, contexto.Empresa, codigo);
         var cliente = await contexto.Ejecutar(
             Operaciones.ClienteCrear,
-            Campos(cuerpo, "codigo", "razonSocial", "rfc", "tipoCliente", "limiteCredito", "regimenFiscal", "usoCfdi"),
+            DatosDeClienteNuevo(cuerpo),
             contexto.LlaveCon("cliente"));
         if (cliente.EnCurso)
         {
@@ -320,6 +320,13 @@ public static class ApiRest
         return Results.Json(new { id, tareaId = guardado.TareaId, resultado = ClienteConDireccion(cliente, guardado) }, statusCode: 201);
     }
 
+    private static JsonObject DatosDeClienteNuevo(JsonObject cuerpo)
+    {
+        var datos = Campos(cuerpo, "codigo", "razonSocial", "rfc", "tipoCliente", "regimenFiscal", "usoCfdi");
+        datos["limiteCredito"] = 0;
+        return datos;
+    }
+
     private static Task<IResult> BuscarClienteAsync(Contexto contexto) =>
         BuscarPorCodigoAsync(contexto, TipoCliente, Operaciones.ClienteLeer);
 
@@ -351,7 +358,7 @@ public static class ApiRest
     {
         var cuerpo = contexto.Cuerpo!;
         var codigo = contexto.Recurso!.Clave;
-        var cambios = Campos(cuerpo, "razonSocial", "rfc", "limiteCredito", "regimenFiscal", "usoCfdi");
+        var cambios = Campos(cuerpo, "razonSocial", "rfc", "regimenFiscal", "usoCfdi");
         if (cambios.Count == 0)
         {
             return Errores.Validacion(["No hay datos que actualizar; la dirección se actualiza con PATCH /api/clientes/{id}/direcciones/actualizar"]);
@@ -577,7 +584,7 @@ public static class ApiRest
             errores.Add("Movimientos: se necesita al menos uno");
         }
 
-        var partidas = new List<object>();
+        var partidasPedidas = new List<(string? ProductoCodigo, decimal? Unidades, decimal? Precio, string Almacen, decimal? Iva, decimal? RetencionIva, decimal? Ieps)>();
         for (var indice = 0; indice < movimientos.Count; indice++)
         {
             var movimiento = movimientos[indice];
@@ -588,7 +595,7 @@ public static class ApiRest
                 errores.Add($"Movimiento {indice + 1}: unidades debe ser mayor que 0");
             }
 
-            if (Numero(movimiento["precio"]) is not >= 0)
+            if (Numero(movimiento["precio"]) is < 0)
             {
                 errores.Add($"Movimiento {indice + 1}: precio debe ser 0 o mayor");
             }
@@ -607,21 +614,60 @@ public static class ApiRest
                 almacen = almacenPedido.Trim();
             }
 
-            partidas.Add(new
-            {
+            partidasPedidas.Add((
                 productoCodigo,
-                unidades = Numero(movimiento["unidades"]),
-                precio = Numero(movimiento["precio"]),
+                Numero(movimiento["unidades"]),
+                Numero(movimiento["precio"]),
                 almacen,
-                ivaPorcentaje = Numero(movimiento["ivaPorcentaje"]),
-                retencionIvaPorcentaje = Numero(movimiento["retencionIvaPorcentaje"]),
-                iepsPorcentaje = Numero(movimiento["iepsPorcentaje"]),
-            });
+                Numero(movimiento["ivaPorcentaje"]),
+                Numero(movimiento["retencionIvaPorcentaje"]),
+                Numero(movimiento["iepsPorcentaje"])));
         }
 
         if (errores.Count > 0)
         {
             return Errores.Validacion(errores);
+        }
+
+        var partidas = new List<object>();
+        var preciosDeProducto = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        foreach (var partida in partidasPedidas)
+        {
+            var precio = partida.Precio;
+            if (precio is null)
+            {
+                if (!preciosDeProducto.TryGetValue(partida.ProductoCodigo!, out var precioDelProducto))
+                {
+                    var producto = await contexto.Ejecutar(Operaciones.ProductoLeer, new { codigo = partida.ProductoCodigo }, null);
+                    if (!producto.Ok)
+                    {
+                        return Responder(contexto, producto);
+                    }
+
+                    if (producto.Datos is not { ValueKind: JsonValueKind.Object } datosDelProducto
+                        || !datosDelProducto.TryGetProperty("precio1", out var precio1)
+                        || precio1.ValueKind != JsonValueKind.Number)
+                    {
+                        return Errores.Validacion([$"El producto {partida.ProductoCodigo} no tiene precio en CONTPAQi Comercial; envíe el precio en el movimiento"]);
+                    }
+
+                    precioDelProducto = precio1.GetDecimal();
+                    preciosDeProducto[partida.ProductoCodigo!] = precioDelProducto;
+                }
+
+                precio = precioDelProducto;
+            }
+
+            partidas.Add(new
+            {
+                productoCodigo = partida.ProductoCodigo,
+                unidades = partida.Unidades,
+                precio,
+                almacen = partida.Almacen,
+                ivaPorcentaje = partida.Iva,
+                retencionIvaPorcentaje = partida.RetencionIva,
+                iepsPorcentaje = partida.Ieps,
+            });
         }
 
         var regimenFiscal = Texto(cuerpo["regimenFiscal"])!.Trim();
@@ -807,10 +853,9 @@ public static class ApiRest
     {
         var elementos = contexto.Cuerpo!["documentos"] as JsonArray ?? [];
         var errores = new List<string>();
-        var maximo = Math.Max(1, contexto.Almacen.LeerAjusteEntero(contexto.Quien.ClienteId, Almacen.AjusteMaximoPorLote) ?? contexto.Opciones.MaximoDocumentosPorLote);
-        if (elementos.Count == 0 || elementos.Count > maximo)
+        if (elementos.Count == 0)
         {
-            errores.Add($"Documentos: se envían entre 1 y {maximo}");
+            errores.Add("Documentos: se envía al menos uno");
         }
 
         var pedidos = new List<(RecursoAcusa Recurso, string? Motivo, string? UuidSustituto)>();
