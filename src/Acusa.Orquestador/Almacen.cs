@@ -55,6 +55,7 @@ public sealed class Almacen
         // Una llave de idempotencia identifica una orden de un cliente: la base misma impide registrarla dos veces.
         Ejecutar("CREATE UNIQUE INDEX IF NOT EXISTS ux_tareas_llave ON tareas (cliente_id, llave) WHERE llave IS NOT NULL");
         Ejecutar("""
+            CREATE TABLE IF NOT EXISTS ajustes (cliente_id TEXT NOT NULL, clave TEXT NOT NULL, valor TEXT NOT NULL, PRIMARY KEY (cliente_id, clave));
             CREATE TABLE IF NOT EXISTS recursos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, cliente_id TEXT NOT NULL, tipo TEXT NOT NULL, empresa TEXT NOT NULL COLLATE NOCASE,
                 clave TEXT NOT NULL, creado TEXT NOT NULL);
@@ -417,6 +418,25 @@ public sealed class Almacen
         using var r = comando.ExecuteReader();
         return r.Read() ? LeerTarea(r) : null;
     }
+
+    public const string AjusteMaximoPorLote = "maximoDocumentosPorLote";
+
+    public int? LeerAjusteEntero(string clienteId, string clave)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, "SELECT valor FROM ajustes WHERE cliente_id=$cliente AND clave=$clave", ("$cliente", clienteId), ("$clave", clave));
+        if (comando.ExecuteScalar() is string texto && int.TryParse(texto, NumberStyles.None, CultureInfo.InvariantCulture, out var valor))
+        {
+            return valor;
+        }
+
+        return null;
+    }
+
+    public void GuardarAjusteEntero(string clienteId, string clave, int valor) =>
+        Ejecutar(
+            "INSERT INTO ajustes (cliente_id, clave, valor) VALUES ($cliente, $clave, $valor) ON CONFLICT(cliente_id, clave) DO UPDATE SET valor=excluded.valor",
+            ("$cliente", clienteId), ("$clave", clave), ("$valor", valor.ToString(CultureInfo.InvariantCulture)));
 
     public IReadOnlyList<EmpresaAcusa> EmpresasConId(string clienteId)
     {

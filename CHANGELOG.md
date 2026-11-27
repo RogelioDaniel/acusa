@@ -14,7 +14,7 @@
 ## Sin publicar
 
 - Errores con un solo campo de texto: `{ codigo, detalles, idCorrelacion }`. Se quita `mensaje`; su texto va en `detalles`.
-- Timbrar y cancelar varias facturas ya no tienen tope de documentos por petición.
+- El máximo de documentos por lote se configura en el portal (Configuración); 500 por omisión.
 - El límite de crédito del cliente se guarda siempre en 0; `limiteCredito` deja de aceptarse.
 - Un movimiento sin `precio` usa el precio del producto en CONTPAQi Comercial.
 - Swagger con un ejemplo de respuesta en cada ruta.

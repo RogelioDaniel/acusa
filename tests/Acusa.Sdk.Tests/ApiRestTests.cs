@@ -190,12 +190,23 @@ public sealed class ApiRestTests : IDisposable
         (await respuesta.Content.ReadFromJsonAsync<ErrorApi>(new JsonSerializerOptions(JsonSerializerDefaults.Web)))!;
 
     [Fact]
-    public async Task TimbrarVarios_SinDocumentos_Responde422()
+    public async Task TimbrarVarios_ConMaximoPorLoteDelCliente_RechazaLoQueLoExcede()
+    {
+        _almacen.GuardarAjusteEntero(_clienteId, Almacen.AjusteMaximoPorLote, 2);
+
+        var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = new[] { 1, 2, 3 } });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
+        Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("entre 1 y 2"));
+    }
+
+    [Fact]
+    public async Task TimbrarVarios_SinAjusteDelCliente_UsaElMaximoPorOmision()
     {
         var respuesta = await _http.PostAsJsonAsync("/api/documentos/timbrar", new { documentos = Array.Empty<int>() });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
-        Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("al menos uno"));
+        Assert.Contains((await LeerErrorAsync(respuesta)).Detalles, detalle => detalle.Contains("entre 1 y 500"));
     }
 
     [Fact]

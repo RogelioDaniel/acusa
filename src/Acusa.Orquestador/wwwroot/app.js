@@ -711,7 +711,16 @@ function vistaConfig(raiz) {
     } catch (e) { falla(lista)(e); }
   }
 
+  const maximo = h("input", { type: "number", min: "1", max: "5000", required: true, "aria-label": "Máximo de documentos por lote" });
+  const lote = h("form", { class: "fila-acciones", onsubmit: async (e) => {
+    e.preventDefault();
+    try { await api("/api/portal/ajustes/lote", { method: "PUT", body: JSON.stringify({ maximo: Number(maximo.value) }) }); aviso("Máximo por lote guardado"); }
+    catch (err) { aviso(err.message); }
+  } }, h("label", { class: "campo" }, h("span", null, "Máximo de documentos por lote"), maximo), h("button", { class: "boton", type: "submit", style: "margin-bottom:12px" }, "Guardar"));
+  api("/api/portal/ajustes/lote").then((a) => { maximo.value = a.maximo; }).catch(() => {});
+
   raiz.append(encabezado("Configuración", `Su cuenta (${u.email || "—"}) y las empresas que atiende ${PRODUCTO}.`),
+    h("div", { class: "tarjeta", style: "max-width:460px" }, h("h2", null, "Timbrado y cancelación por lote"), h("p", { class: "sub" }, "Cuántas facturas acepta una sola petición de timbrar o cancelar varias."), lote),
     h("div", { class: "tarjeta" }, h("h2", null, "Empresas"), h("p", { class: "sub" }, "Un worker solo atiende empresas registradas aquí. El nombre es el de la carpeta de la empresa en CONTPAQi."), alta, lista),
     h("div", { class: "tarjeta", style: "max-width:460px" }, h("h2", null, "Cambiar contraseña"), clave));
   cargar();
